@@ -1,82 +1,74 @@
 # PACT Core
 
-PACT Core is the protocol brain of the PACT Network.
-It is designed for **AI-agent-native execution**, where autonomous workers, validators, and issuers coordinate through verifiable state transitions, reputation, and programmable settlement.
+PACT Core is the protocol runtime of the PACT Network, built for **AI-agent-first coordination**.
 
-## Agent-First Positioning
+It follows the PACT whitepaper as the normative baseline, while integrating practical runtime lessons from modern autonomous-agent systems (for example: continuous loop execution patterns and heartbeat governance) and Web4-style agent economy framing.
 
-PACT is not only a backend service.
-It is a coordination runtime where agents can:
+## Design Inputs
 
-- discover work
-- negotiate assignment
-- submit machine-verifiable evidence
-- pass through layered validation
-- receive deterministic settlement
-- evolve reputation over time
-
-`core` defines these invariants so every agent in the ecosystem plays by the same rules.
+1. **PACT Whitepaper (source of truth)**
+   - six modules (`PactCompute`, `PactTasks`, `PactPay`, `PactID`, `PactData`, `PactDev`)
+   - state machine, validation, matching, and incentive constraints
+2. **Automaton-style runtime patterns (inspiration)**
+   - Think -> Act -> Observe style loops
+   - heartbeat and scheduled control tasks
+   - explicit capability policy and audit trails
+3. **Web4 framing (directional narrative)**
+   - agents as first-class digital operators in an economic network
+   - programmable trust and machine-verifiable work
 
 ## Core Protocol Loop
 
 ```text
-Intent -> Match -> Assign -> Execute -> Submit Evidence -> Validate -> Settle -> Learn
+Intent -> Claim -> Execute -> Emit Evidence -> Validate -> Escalate(if needed) -> Settle -> Learn
 ```
 
-Mapped lifecycle state machine:
+State anchors in current implementation:
 
-`Created -> Assigned -> Submitted -> Verified -> Completed`
+- task: `Created -> Assigned -> Submitted -> Verified -> Completed`
+- mission: `Open -> Claimed -> InProgress -> UnderReview -> Settled/Failed`
 
-## Architecture (Agent-Oriented)
+## Architecture (Runtime-Centric)
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ Agent Interaction Plane                                                  │
-│ Agent Inbox/Outbox | Event Streams | Policy-Gated Tool Calls            │
+│ Agent Control Plane                                                      │
+│ Inbox/Outbox | Event Streams | Heartbeat Hooks | Capability Boundaries  │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Coordination Kernel                                                      │
 │ PactTasks | PactCompute | PactData | PactDev | PactID | PactPay         │
 ├──────────────────────────────────────────────────────────────────────────┤
-│ Trust & Incentive Plane                                                  │
-│ Validation Pipeline | Reputation Engine | Matching Engine | X402 Ledger  │
+│ Trust & Incentive Kernel                                                 │
+│ Validation Pipeline | Reputation | Matching | Challenge/Retry Logic      │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Settlement & Chain Abstraction                                           │
-│ Escrow Gateway | Release Gateway (Base-chain abstraction)               │
+│ Escrow Gateway | Release Gateway | X402 Payment Adapter                  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Whitepaper Traceability
+## What Is Implemented Now
 
-PACT Core tracks the whitepaper module set:
+- deterministic task state machine and transition guards
+- mission runtime primitives (envelope, steps, evidence, verdicts)
+- agent mailbox (inbox/outbox) and event journal replay
+- three-layer validation pipeline
+- challenge/escalation lifecycle and jury resolution paths
+- bounded retry policy for failed missions
+- reputation + matching + payment split (`85/5/5/5`)
 
-- **PactCompute**: scheduled compute and machine task execution
-- **PactTasks**: lifecycle orchestration and assignment control
-- **PactPay**: escrow and deterministic split settlement (85/5/5/5)
-- **PactID**: participant identity and role registration
-- **PactData**: data asset publication and provenance entry
-- **PactDev**: developer and integration registration surface
+## What Is Intentionally Out of Scope (for now)
 
-## What Exists Now
+- unbounded self-replication
+- unconstrained side-effect execution
+- opaque settlement outside protocol events
 
-- deterministic task state machine + illegal transition protection
-- three-layer validation pipeline (Auto AI -> Agent Validators -> Human Jury)
-- reputation model (0-100 clamp)
-- Gale-Shapley variant matcher with skills/distance/reputation/capacity constraints
-- event-driven orchestration in application layer
-- in-memory adapters for rapid protocol iteration
-
-## What We Are Expanding Next
-
-- agent inbox/outbox and event subscription semantics (beyond request/response)
-- policy and capability contracts for autonomous tool execution
-- long-running multi-agent mission orchestration
-- production adapters (database, queue, chain contracts, observability)
+PACT Core prioritizes **bounded autonomy + verifiable economics**, not raw autonomy.
 
 ## Project Structure
 
 ```text
 src/
-  api/                  # currently available transport surface (not the product center)
+  api/                  # transport surface (not product center)
   application/
     modules/
   domain/
@@ -85,6 +77,8 @@ src/
 docs/
   architecture.md
   agent-native-architecture.md
+  agent-runtime-blueprint.md
+  automaton-web4-alignment.md
   whitepaper-traceability.md
 ```
 
@@ -93,21 +87,16 @@ docs/
 ```bash
 bun install
 bun test
+bun run typecheck
 bun run dev
 ```
-
-## Tests
-
-```bash
-bun test
-```
-
-Current suite validates protocol-critical behavior: lifecycle, validation, matching, settlement, and orchestration.
 
 ## Documentation
 
 - `docs/architecture.md`
 - `docs/agent-native-architecture.md`
+- `docs/agent-runtime-blueprint.md`
+- `docs/automaton-web4-alignment.md`
 - `docs/whitepaper-traceability.md`
 - `docs/domain-model.md`
 - `docs/api.md` (transport reference)

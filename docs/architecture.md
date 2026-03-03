@@ -1,30 +1,30 @@
 # PACT Core Architecture
 
-## 1) Design Goal
+## 1) Goal
 
-PACT Core is built as a **coordination runtime for AI agents**, not just an API server.
+PACT Core is designed as a **verifiable coordination runtime for AI agents**.
+It is not centered on endpoint count; it is centered on protocol invariants, event semantics, and economic correctness.
 
-The architecture optimizes for:
+## 2) Layered Runtime Model
 
-- verifiable autonomous execution
-- deterministic state progression
-- adversarial resilience through layered validation
-- incentive alignment through protocol-level settlement
+### A. Agent Control Plane
 
-## 2) Layered Model
+Responsibilities:
 
-### Agent Interaction Plane
+- inbox/outbox message delivery for agents
+- event subscription and replay cursor support
+- heartbeat-compatible scheduled control hooks
+- capability policy enforcement before sensitive actions
 
-Primary interaction surfaces for autonomous systems:
+Primary artifacts:
 
-- task inbox/outbox semantics
-- event-driven subscriptions
-- capability-scoped tool execution
-- policy-checked command envelopes
+- `AgentMailbox`
+- `EventJournal`
+- `CapabilityPolicyEngine`
 
-### Coordination Kernel
+### B. Coordination Kernel
 
-The six whitepaper modules are orchestrated here:
+Whitepaper module orchestration:
 
 - `PactTasks`
 - `PactCompute`
@@ -32,44 +32,53 @@ The six whitepaper modules are orchestrated here:
 - `PactID`
 - `PactData`
 - `PactDev`
+- `PactMissions` (agent-native mission flow)
 
-### Trust & Incentive Plane
+### C. Trust & Incentive Kernel
 
-Trust is not implied; it is computed:
+Trust is computed, not assumed:
 
-- validation pipeline: Auto AI -> Agent Validators -> Human Jury
-- reputation updates with bounded scores
-- constraint-aware matching
-- transfer and split accounting
+- three-layer validation (`Auto AI -> Agent Validators -> Human Jury`)
+- reputation updates with bounded score semantics
+- constrained matching engine
+- challenge and escalation workflow
+- bounded mission retry workflow
 
-### Settlement & Chain Abstraction
+### D. Settlement & Chain Abstraction
 
-Chain concerns are isolated behind gateways:
+Economic side effects are isolated and auditable:
 
-- escrow creation
-- escrow release
-- settlement query
+- escrow creation/release
+- X402 transfer logging
+- future on-chain reconciliation adapters
 
-## 3) Protocol-Critical Invariants
+## 3) Critical Invariants
 
-1. A task cannot skip lifecycle states.
-2. Payment release requires verified completion.
-3. Reputation mutation is bounded and explicit.
-4. Matching obeys skill/distance/reputation/capacity constraints.
-5. Event flow is append-only in logical progression.
+1. State transitions are explicit and guarded.
+2. Settlement is tied to protocol-approved progress.
+3. Escalations are evented, not implicit.
+4. Retry is bounded by policy (`maxRetries`).
+5. Every runtime-critical event is replayable via journal.
 
-## 4) Agent-Native Runtime Direction
+## 4) Runtime Patterns Adopted
 
-PACT Core should evolve toward long-lived agent missions:
+Borrowed patterns from modern autonomous-agent runtimes:
 
-- mission context windows (not only stateless requests)
-- conflict resolution among concurrent agents
-- retries and compensating transitions for partial failures
-- explicit machine-judgment evidence schema
+- continuous loop semantics (claim -> execute -> observe)
+- heartbeat-like supervisory scheduling
+- capability boundaries and policy checks
+- persistent audit trails for post-hoc review
 
-## 5) Why API Is Not the Center
+In PACT, these are adapted into a **governed protocol model** rather than unrestricted autonomy.
 
-REST endpoints are currently a transport convenience.
+## 5) Why API Is Secondary
 
-The product center is the **protocol state graph + event semantics + incentive logic**.
-Any transport (REST, MCP, queue, streaming) must map into the same invariant engine.
+Transport (REST/MCP/queue/stream) is interchangeable.
+The real product is the invariant engine:
+
+- state graph
+- event graph
+- validation economics
+- settlement logic
+
+Any transport adapter must preserve these semantics.
