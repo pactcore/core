@@ -98,6 +98,33 @@ Lists known compensation assets.
 
 Returns grouped totals by asset for a compensation model.
 
+`POST /economics/valuations`
+
+Registers an asset valuation against a reference asset (for example: LLM token -> USDC).
+
+Example payload:
+
+```json
+{
+  "assetId": "llm-gpt5",
+  "referenceAssetId": "usdc-mainnet",
+  "rate": 0.0001,
+  "source": "internal-pricing-v1"
+}
+```
+
+`GET /economics/valuations?referenceAssetId=usdc-mainnet`
+
+Lists valuation records (optionally filtered by reference asset).
+
+`POST /economics/quote-reference`
+
+Converts a multi-asset compensation model into a single reference asset quote.
+
+`POST /economics/settlement-plan`
+
+Builds a settlement routing plan by asset class/rail (onchain stablecoin, llm metering, cloud billing, api quota, custom).
+
 ## Other Modules
 
 - `POST /compute/jobs`

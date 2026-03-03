@@ -158,6 +158,38 @@ export function createApp(validationConfig?: ValidationConfig) {
     return c.json(quote);
   });
 
+  app.post("/economics/valuations", async (c) => {
+    const body = await c.req.json();
+    const valuation = await container.pactEconomics.registerValuation({
+      assetId: String(body.assetId),
+      referenceAssetId: String(body.referenceAssetId),
+      rate: Number(body.rate),
+      asOf: typeof body.asOf === "number" ? body.asOf : undefined,
+      source: body.source ? String(body.source) : undefined,
+    });
+    return c.json(valuation, 201);
+  });
+
+  app.get("/economics/valuations", async (c) => {
+    const referenceAssetId = c.req.query("referenceAssetId");
+    return c.json(await container.pactEconomics.listValuations(referenceAssetId));
+  });
+
+  app.post("/economics/quote-reference", async (c) => {
+    const body = await c.req.json();
+    const quote = await container.pactEconomics.quoteInReference(
+      body.model,
+      String(body.referenceAssetId),
+    );
+    return c.json(quote);
+  });
+
+  app.post("/economics/settlement-plan", async (c) => {
+    const body = await c.req.json();
+    const plan = await container.pactEconomics.planSettlement(body);
+    return c.json(plan, 201);
+  });
+
   app.post("/dev/integrations", async (c) => {
     const body = await c.req.json();
     const integration = await container.pactDev.register({

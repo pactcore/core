@@ -35,6 +35,8 @@ This document maps whitepaper concepts to current `core` implementation and next
 - multi-asset compensation validation: implemented
 - grouped compensation quote by asset: implemented
 - asset registry abstraction: implemented
+- valuation registry and reference-asset quoting: implemented (v0.2.x)
+- settlement routing plan by asset rail: implemented (v0.2.x)
 
 Compensation classes modeled:
 
