@@ -15,6 +15,9 @@ import { InMemoryReputationService } from "../infrastructure/reputation/in-memor
 import { InMemoryScheduler } from "../infrastructure/scheduler/in-memory-scheduler";
 import { InMemoryTaskManager } from "../infrastructure/task-manager/in-memory-task-manager";
 import { InMemoryValidatorConsensus } from "../infrastructure/validator-consensus/in-memory-validator-consensus";
+import { InMemoryApiQuotaAllocationConnector } from "../infrastructure/settlement/in-memory-api-quota-allocation-connector";
+import { InMemoryCloudCreditBillingConnector } from "../infrastructure/settlement/in-memory-cloud-credit-billing-connector";
+import { InMemoryLlmTokenMeteringConnector } from "../infrastructure/settlement/in-memory-llm-token-metering-connector";
 import { PactOrchestrator } from "./orchestrator";
 import { PactCompute } from "./modules/pact-compute";
 import { PactData } from "./modules/pact-data";
@@ -74,7 +77,14 @@ export function createContainer(config: ValidationConfig = recommendedValidation
     eventBus,
   );
   const pactHeartbeat = new PactHeartbeat(heartbeatSupervisor, eventBus);
-  const pactEconomics = new PactEconomics();
+  const pactEconomics = new PactEconomics({
+    eventBus,
+    settlementConnectors: {
+      llmTokenMetering: new InMemoryLlmTokenMeteringConnector(),
+      cloudCreditBilling: new InMemoryCloudCreditBillingConnector(),
+      apiQuotaAllocation: new InMemoryApiQuotaAllocationConnector(),
+    },
+  });
 
   const orchestrator = new PactOrchestrator(
     eventBus,

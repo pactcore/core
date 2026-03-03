@@ -22,4 +22,7 @@ export const DomainEvents = {
   HeartbeatTaskExecuted: "heartbeat.task_executed",
   HeartbeatTaskDisabled: "heartbeat.task_disabled",
   HeartbeatTaskEnabled: "heartbeat.task_enabled",
+
+  EconomicsSettlementRecordCreated: "economics.settlement_record_created",
+  EconomicsSettlementExecuted: "economics.settlement_executed",
 } as const;

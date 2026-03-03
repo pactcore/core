@@ -190,6 +190,36 @@ export function createApp(validationConfig?: ValidationConfig) {
     return c.json(plan, 201);
   });
 
+  app.post("/economics/settlements/execute", async (c) => {
+    const body = await c.req.json();
+    const result = await container.pactEconomics.executeSettlement({
+      model: body.model,
+      settlementId: body.settlementId ? String(body.settlementId) : undefined,
+    });
+    return c.json(result, 201);
+  });
+
+  app.get("/economics/settlements/records", async (c) => {
+    const railValue = c.req.query("rail");
+    const rail = isSettlementRail(railValue) ? railValue : undefined;
+    const records = await container.pactEconomics.listSettlementRecords({
+      settlementId: c.req.query("settlementId"),
+      assetId: c.req.query("assetId"),
+      rail,
+      payerId: c.req.query("payerId"),
+      payeeId: c.req.query("payeeId"),
+    });
+    return c.json(records);
+  });
+
+  app.get("/economics/settlements/records/:id", async (c) => {
+    const record = await container.pactEconomics.getSettlementRecord(c.req.param("id"));
+    if (!record) {
+      throw new HTTPException(404, { message: "Settlement record not found" });
+    }
+    return c.json(record);
+  });
+
   app.post("/dev/integrations", async (c) => {
     const body = await c.req.json();
     const integration = await container.pactDev.register({
@@ -215,4 +245,10 @@ export function createApp(validationConfig?: ValidationConfig) {
   });
 
   return app;
+}
+
+function isSettlementRail(
+  value?: string,
+): value is "llm_metering" | "cloud_billing" | "api_quota" {
+  return value === "llm_metering" || value === "cloud_billing" || value === "api_quota";
 }

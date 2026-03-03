@@ -17,4 +17,15 @@ export {
 export { PactMissions } from "./application/modules/pact-missions";
 export { PactHeartbeat } from "./application/modules/pact-heartbeat";
 export { PactEconomics } from "./application/modules/pact-economics";
+export type {
+  SettlementConnectorRequest,
+  SettlementConnectorResult,
+  LlmTokenMeteringConnector,
+  CloudCreditBillingConnector,
+  ApiQuotaAllocationConnector,
+  SettlementConnectors,
+} from "./application/settlement-connectors";
 export { InMemoryHeartbeatSupervisor } from "./infrastructure/heartbeat/in-memory-heartbeat-supervisor";
+export { InMemoryLlmTokenMeteringConnector } from "./infrastructure/settlement/in-memory-llm-token-metering-connector";
+export { InMemoryCloudCreditBillingConnector } from "./infrastructure/settlement/in-memory-cloud-credit-billing-connector";
+export { InMemoryApiQuotaAllocationConnector } from "./infrastructure/settlement/in-memory-api-quota-allocation-connector";
