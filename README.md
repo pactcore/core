@@ -7,8 +7,8 @@ It implements the execution model from the whitepaper: task lifecycle orchestrat
 
 PACT is split into two repositories:
 
-- **`pact-core`** (this repo): protocol logic and service runtime
-- **`pact-sdk`**: developer-facing TypeScript SDK for app and agent integration
+- **`core`** (this repo): protocol logic and service runtime
+- **`sdk`**: developer-facing TypeScript SDK for app and agent integration
 
 This separation keeps protocol invariants stable while enabling fast SDK iteration.
 
