@@ -1,4 +1,5 @@
 import type {
+  MissionEnvelope,
   Participant,
   ReputationRecord,
   Task,
@@ -13,6 +14,12 @@ export interface TaskRepository {
   save(task: Task): Promise<void>;
   getById(id: string): Promise<Task | undefined>;
   list(): Promise<Task[]>;
+}
+
+export interface MissionRepository {
+  save(mission: MissionEnvelope): Promise<void>;
+  getById(id: string): Promise<MissionEnvelope | undefined>;
+  list(): Promise<MissionEnvelope[]>;
 }
 
 export interface ParticipantRepository {
@@ -47,6 +54,35 @@ export interface DomainEvent<TPayload> {
   name: string;
   payload: TPayload;
   createdAt: number;
+}
+
+export interface EventJournalRecord {
+  offset: number;
+  event: DomainEvent<unknown>;
+}
+
+export interface EventJournal {
+  append(event: DomainEvent<unknown>): Promise<EventJournalRecord>;
+  replay(fromOffset?: number, limit?: number): Promise<EventJournalRecord[]>;
+  latestOffset(): Promise<number>;
+}
+
+export interface AgentMailboxMessage {
+  id: string;
+  agentId: string;
+  direction: "inbox" | "outbox";
+  topic: string;
+  payload: unknown;
+  createdAt: number;
+  ackedAt?: number;
+}
+
+export interface AgentMailbox {
+  enqueueInbox(agentId: string, topic: string, payload: unknown): Promise<AgentMailboxMessage>;
+  enqueueOutbox(agentId: string, topic: string, payload: unknown): Promise<AgentMailboxMessage>;
+  pullInbox(agentId: string, limit?: number): Promise<AgentMailboxMessage[]>;
+  listOutbox(agentId: string, limit?: number): Promise<AgentMailboxMessage[]>;
+  ackInbox(agentId: string, messageId: string): Promise<void>;
 }
 
 export type EventHandler<TPayload> = (event: DomainEvent<TPayload>) => Promise<void> | void;

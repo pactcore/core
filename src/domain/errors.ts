@@ -28,3 +28,23 @@ export class ConstraintViolationError extends Error {
     this.name = "ConstraintViolationError";
   }
 }
+
+export class CapabilityDeniedError extends Error {
+  constructor(
+    public readonly role: string,
+    public readonly capability: string,
+  ) {
+    super(`Capability denied: role=${role} capability=${capability}`);
+    this.name = "CapabilityDeniedError";
+  }
+}
+
+export class MissionStateTransitionError extends Error {
+  constructor(
+    public readonly from: string,
+    public readonly to: string,
+  ) {
+    super(`Illegal mission state transition: ${from} -> ${to}`);
+    this.name = "MissionStateTransitionError";
+  }
+}

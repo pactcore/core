@@ -1,8 +1,11 @@
 import { recommendedValidationConfig, type ValidationConfig } from "../domain/validation-pipeline";
 import { TaskStateMachine } from "../domain/task-state-machine";
 import { InMemoryBaseChainGateway } from "../infrastructure/blockchain/in-memory-base-chain-gateway";
+import { InMemoryAgentMailbox } from "../infrastructure/agent/in-memory-agent-mailbox";
 import { InMemoryEventBus } from "../infrastructure/event-bus/in-memory-event-bus";
+import { InMemoryEventJournal } from "../infrastructure/event-bus/in-memory-event-journal";
 import { InMemoryX402PaymentAdapter } from "../infrastructure/payment/in-memory-x402-payment-adapter";
+import { InMemoryMissionRepository } from "../infrastructure/repositories/in-memory-mission-repository";
 import { InMemoryParticipantRepository } from "../infrastructure/repositories/in-memory-participant-repository";
 import { InMemoryReputationRepository } from "../infrastructure/repositories/in-memory-reputation-repository";
 import { InMemoryTaskRepository } from "../infrastructure/repositories/in-memory-task-repository";
@@ -16,6 +19,7 @@ import { PactCompute } from "./modules/pact-compute";
 import { PactData } from "./modules/pact-data";
 import { PactDev } from "./modules/pact-dev";
 import { PactID } from "./modules/pact-id";
+import { PactMissions } from "./modules/pact-missions";
 import { PactPay } from "./modules/pact-pay";
 import { PactTasks } from "./modules/pact-tasks";
 
@@ -26,15 +30,22 @@ export interface PactContainer {
   pactID: PactID;
   pactData: PactData;
   pactDev: PactDev;
+  pactMissions: PactMissions;
+  eventJournal: InMemoryEventJournal;
+  agentMailbox: InMemoryAgentMailbox;
 }
 
 export function createContainer(config: ValidationConfig = recommendedValidationConfig): PactContainer {
   const taskRepository = new InMemoryTaskRepository();
+  const missionRepository = new InMemoryMissionRepository();
   const workerRepository = new InMemoryWorkerRepository();
   const participantRepository = new InMemoryParticipantRepository();
   const reputationRepository = new InMemoryReputationRepository();
 
-  const eventBus = new InMemoryEventBus();
+  const eventJournal = new InMemoryEventJournal();
+  const eventBus = new InMemoryEventBus(eventJournal);
+  const agentMailbox = new InMemoryAgentMailbox();
+
   const stateMachine = new TaskStateMachine();
   const taskManager = new InMemoryTaskManager(taskRepository, stateMachine);
 
@@ -50,6 +61,12 @@ export function createContainer(config: ValidationConfig = recommendedValidation
   const pactCompute = new PactCompute(scheduler);
   const pactData = new PactData();
   const pactDev = new PactDev();
+  const pactMissions = new PactMissions(
+    missionRepository,
+    participantRepository,
+    agentMailbox,
+    eventBus,
+  );
 
   const orchestrator = new PactOrchestrator(
     eventBus,
@@ -67,5 +84,8 @@ export function createContainer(config: ValidationConfig = recommendedValidation
     pactID,
     pactData,
     pactDev,
+    pactMissions,
+    eventJournal,
+    agentMailbox,
   };
 }
