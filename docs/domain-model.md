@@ -13,6 +13,20 @@
 - `evidence`
 - `validatorIds`
 
+### MissionEnvelope
+
+- `id`
+- `issuerId`
+- `claimedBy`
+- `status`
+- `context`
+- `executionSteps`
+- `evidenceBundles`
+- `verdicts`
+- `challenges`
+- `retryCount` / `maxRetries`
+- `compensationModel` (optional multi-asset settlement graph)
+
 ### WorkerProfile
 
 - `skills`
@@ -27,13 +41,29 @@
 - `role`
 - `score` (0-100)
 
-## Lifecycle State Machine
+### CompensationModel
 
-Fixed ordered states:
+- `mode`: `single_asset` or `multi_asset`
+- `legs[]`: payer/payee/asset/amount/unit
+- supports assets like stablecoin, LLM tokens, cloud credits, API quotas
+
+## Lifecycle State Machines
+
+### Task
 
 `Created -> Assigned -> Submitted -> Verified -> Completed`
 
-Skipping, rolling back, or repeating invalid transitions throws `IllegalStateTransitionError`.
+### Mission
+
+`Open -> Claimed -> InProgress -> UnderReview -> Settled/Failed`
+
+Retry path:
+
+`Failed -> Open` (bounded by `maxRetries`)
+
+Escalation path:
+
+`UnderReview + challenge -> Jury resolution -> Settled/Failed`
 
 ## Validation Pipeline
 
@@ -47,26 +77,26 @@ Config fields:
 
 - `enabled`
 - `passThreshold`
-- `requiredParticipants` (for validator and jury layers)
+- `requiredParticipants`
 
 ## Matching Model
 
 Constraints:
 
-- Skill fit: `requiredSkills ⊆ worker.skills`
-- Distance bound: `distance <= maxDistanceKm`
-- Reputation bound: `worker.reputation >= minReputation`
-- Capacity bound: `activeTaskIds < capacity`
+- skill fit
+- distance bound
+- reputation bound
+- capacity bound
 
 After filtering, a Gale-Shapley variant computes stable assignments.
 
-## Payment Split
+## Settlement Semantics
 
-On successful task completion:
+Task-level split (current default):
 
-- 85% to Worker
-- 5% to Validators
-- 5% to Treasury
-- 5% to Issuer
+- 85% Worker
+- 5% Validators
+- 5% Treasury
+- 5% Issuer
 
-Total amount is preserved; rounding dust is allocated to Treasury.
+Mission-level settlement can additionally use multi-asset compensation legs.

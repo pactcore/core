@@ -2,29 +2,29 @@
 
 ## 1) Goal
 
-PACT Core is designed as a **verifiable coordination runtime for AI agents**.
-It is not centered on endpoint count; it is centered on protocol invariants, event semantics, and economic correctness.
+PACT Core is a **whitepaper-aligned coordination runtime** for mixed labor markets where humans and AI agents are both first-class workers and issuers.
+
+The architecture optimizes for:
+
+- deterministic protocol transitions
+- machine-verifiable evidence
+- governed escalation/dispute handling
+- programmable multi-asset settlement
 
 ## 2) Layered Runtime Model
 
-### A. Agent Control Plane
+### A. Control Plane (Human + Agent)
 
 Responsibilities:
 
-- inbox/outbox message delivery for agents
-- event subscription and replay cursor support
-- heartbeat-compatible scheduled control hooks
-- capability policy enforcement before sensitive actions
-
-Primary artifacts:
-
-- `AgentMailbox`
-- `EventJournal`
-- `CapabilityPolicyEngine`
+- inbox/outbox message delivery
+- event replay cursors
+- heartbeat supervision tasks
+- capability policy checks
 
 ### B. Coordination Kernel
 
-Whitepaper module orchestration:
+Whitepaper modules orchestrated here:
 
 - `PactTasks`
 - `PactCompute`
@@ -32,53 +32,50 @@ Whitepaper module orchestration:
 - `PactID`
 - `PactData`
 - `PactDev`
-- `PactMissions` (agent-native mission flow)
+- `PactMissions` (agent-first mission runtime)
 
 ### C. Trust & Incentive Kernel
 
-Trust is computed, not assumed:
-
 - three-layer validation (`Auto AI -> Agent Validators -> Human Jury`)
-- reputation updates with bounded score semantics
-- constrained matching engine
-- challenge and escalation workflow
-- bounded mission retry workflow
+- reputation updates with bounded scores
+- constrained matching and assignment
+- challenge/escalation lifecycle
+- bounded retry workflow
 
-### D. Settlement & Chain Abstraction
+### D. Economy & Settlement Kernel
 
-Economic side effects are isolated and auditable:
-
-- escrow creation/release
-- X402 transfer logging
+- escrow + release abstraction
+- X402 transfer accounting
+- multi-asset compensation models (crypto + token budgets + credits + quotas)
 - future on-chain reconciliation adapters
 
-## 3) Critical Invariants
+## 3) Core Invariants
 
-1. State transitions are explicit and guarded.
-2. Settlement is tied to protocol-approved progress.
-3. Escalations are evented, not implicit.
+1. Lifecycle transitions are explicit and guarded.
+2. Settlement is tied to validated protocol states.
+3. Escalation/dispute paths are evented and auditable.
 4. Retry is bounded by policy (`maxRetries`).
-5. Every runtime-critical event is replayable via journal.
+5. Runtime-critical events are replayable via journal.
+6. Compensation legs require explicit payer/payee/asset/amount semantics.
 
-## 4) Runtime Patterns Adopted
+## 4) Economic Parity Model
 
-Borrowed patterns from modern autonomous-agent runtimes:
+PACT does not force a human-vs-agent hierarchy.
 
-- continuous loop semantics (claim -> execute -> observe)
-- heartbeat-like supervisory scheduling
-- capability boundaries and policy checks
-- persistent audit trails for post-hoc review
+It models participants symmetrically:
 
-In PACT, these are adapted into a **governed protocol model** rather than unrestricted autonomy.
+- humans can publish tasks, complete tasks, validate tasks
+- agents can publish tasks, complete tasks, validate tasks
+- payouts are policy-defined, evidence-gated, and role-aware
 
 ## 5) Why API Is Secondary
 
-Transport (REST/MCP/queue/stream) is interchangeable.
-The real product is the invariant engine:
+Transport surfaces are replaceable.
+Protocol semantics are not.
 
-- state graph
+The product center is:
+
+- lifecycle state graph
 - event graph
-- validation economics
-- settlement logic
-
-Any transport adapter must preserve these semantics.
+- evidence model
+- incentive and settlement logic

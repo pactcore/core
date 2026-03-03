@@ -1,50 +1,52 @@
 # Whitepaper Traceability Matrix
 
-This document maps whitepaper concepts to current `core` implementation status and next expansion path.
+This document maps whitepaper concepts to current `core` implementation and next expansion path.
 
 ## Module Coverage
 
 | Whitepaper Module | Current Status | Implemented Elements | Next Expansion |
 |---|---|---|---|
-| PactTasks | Partial+ | lifecycle state machine, assignment flow, evidence submission | mission decomposition and cross-mission dependencies |
-| PactCompute | Partial | compute job queue + scheduler hooks | distributed execution adapters, compute metering |
-| PactPay | Partial+ | escrow abstraction, deterministic split logic, settlement triggers | multi-asset flows, slashing/appeal economics |
-| PactID | Partial | participant registration + role model | DID/attestation model, stronger identity proofs |
-| PactData | Early | data asset publication interface | provenance graph and verifiable integrity proofs |
-| PactDev | Early | integration registration | agent package registry and policy bundles |
+| PactTasks | Partial+ | lifecycle state machine, assignment flow, evidence submission | mission decomposition and dependency graphs |
+| PactCompute | Partial | compute queue + scheduler hooks | distributed execution adapters, resource accounting |
+| PactPay | Partial+ | escrow abstraction, deterministic split logic, settlement triggers | multi-asset settlement execution and reconciliation |
+| PactID | Partial | participant registration + role model | DID/attestation and stronger identity proofs |
+| PactData | Early | data publication interface | provenance graph and integrity proofs |
+| PactDev | Early | integration registration | policy bundles and ecosystem package governance |
 
-## Agent Runtime Coverage (New)
+## Mission Runtime Coverage
 
 - mission envelope model: implemented
-- execution step journal: implemented
-- inbox/outbox mailbox: implemented
-- event replay journal: implemented
-- capability policy engine: implemented
-- retry workflow with max bounds: implemented
+- execution step records: implemented
+- evidence bundle model: implemented
+- verdict recording: implemented
 - challenge/escalation lifecycle: implemented
-- jury-driven challenge resolution: implemented
+- bounded retry flow: implemented
 
-## Trust System Coverage
+## Supervisory Runtime Coverage
 
-- validation pipeline (3-layer): implemented
-- reputation model (bounded): implemented
-- matching constraints: implemented
-- verdict disagreement escalation: implemented
-- low-confidence escalation: implemented
-- challenge market economics: planned
+- heartbeat task registration: implemented
+- periodic execution (`tick`): implemented
+- enable/disable controls: implemented
+- heartbeat event logging: implemented
 
-## Settlement Coverage
+## Economic Runtime Coverage
 
-- escrow abstraction: implemented
-- release flow: implemented at adapter level
-- X402 adapter: implemented in-memory
-- chain finality reconciliation: planned
-- settlement dispute slashing: planned
+- compensation model primitives: implemented
+- multi-asset compensation validation: implemented
+- grouped compensation quote by asset: implemented
+- asset registry abstraction: implemented
+
+Compensation classes modeled:
+
+- stablecoins (e.g., USDC)
+- LLM token budgets
+- cloud compute credits
+- API quota units (search/social/data providers)
 
 ## Priority Gaps
 
-1. long-lived mission context persistence beyond in-memory adapters
-2. durable event stores and resumable worker execution across restarts
-3. canonical evidence schema standardization (machine-verifiable)
-4. challenge market incentives and anti-spam economics
-5. production-grade observability and policy simulation tooling
+1. durable mission/economic state stores beyond in-memory adapters
+2. production event backends and long-horizon replay tooling
+3. settlement connectors for non-crypto assets (credits/quotas)
+4. anti-spam economics for challenge market behavior
+5. policy simulation and risk analysis tooling

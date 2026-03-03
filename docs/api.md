@@ -73,6 +73,31 @@ Lists registered heartbeat tasks.
 
 Executes due heartbeat tasks (optional body `{ "now": <timestamp> }`).
 
+## Economics
+
+`POST /economics/assets`
+
+Registers a compensation asset type inside the protocol runtime (for example: USDC, LLM tokens, cloud credits, API quota units).
+
+Example payload:
+
+```json
+{
+  "id": "usdc-mainnet",
+  "kind": "usdc",
+  "symbol": "USDC",
+  "network": "base"
+}
+```
+
+`GET /economics/assets`
+
+Lists known compensation assets.
+
+`POST /economics/quote`
+
+Returns grouped totals by asset for a compensation model.
+
 ## Other Modules
 
 - `POST /compute/jobs`

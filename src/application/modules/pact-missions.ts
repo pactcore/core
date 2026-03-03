@@ -8,6 +8,7 @@ import { DomainEvents } from "../events";
 import { generateId } from "../utils";
 import { NotFoundError } from "../../domain/errors";
 import { CapabilityPolicyEngine } from "../../domain/capability-policy";
+import { validateCompensationModel } from "../../domain/economics";
 import { MissionStateMachine } from "../../domain/mission-state-machine";
 import type {
   EvidenceBundle,
@@ -18,12 +19,14 @@ import type {
   MissionEnvelope,
   ValidationVerdict,
 } from "../../domain/types";
+import type { CompensationModel } from "../../domain/economics";
 
 export interface CreateMissionInput {
   issuerId: string;
   title: string;
   budgetCents: number;
   context: MissionContext;
+  compensationModel?: CompensationModel;
   targetAgentIds?: string[];
   maxRetries?: number;
 }
@@ -80,6 +83,13 @@ export class PactMissions {
       throw new NotFoundError("Participant", input.issuerId);
     }
 
+    if (input.compensationModel) {
+      const validation = validateCompensationModel(input.compensationModel);
+      if (!validation.valid) {
+        throw new Error(`Invalid compensation model: ${validation.reasons.join("; ")}`);
+      }
+    }
+
     const now = Date.now();
     const mission: MissionEnvelope = {
       id: generateId("mission"),
@@ -87,6 +97,7 @@ export class PactMissions {
       title: input.title,
       budgetCents: input.budgetCents,
       context: input.context,
+      compensationModel: input.compensationModel,
       status: "Open",
       targetAgentIds: input.targetAgentIds ?? [],
       executionSteps: [],

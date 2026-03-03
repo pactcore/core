@@ -1,21 +1,30 @@
 # PACT Core
 
-PACT Core is the protocol runtime of the PACT Network, built for **AI-agent-first coordination**.
+PACT Core is the protocol runtime of the PACT Network, built for **human + agent co-working economies**.
 
-It follows the PACT whitepaper as the normative baseline, while integrating practical runtime lessons from modern autonomous-agent systems (for example: continuous loop execution patterns and heartbeat governance) and Web4-style agent economy framing.
+The architecture is derived from the PACT whitepaper as the normative baseline:
 
-## Design Inputs
+- six protocol modules (`PactCompute`, `PactTasks`, `PactPay`, `PactID`, `PactData`, `PactDev`)
+- verifiable lifecycle transitions
+- layered validation and dispute handling
+- programmable settlement
 
-1. **PACT Whitepaper (source of truth)**
-   - six modules (`PactCompute`, `PactTasks`, `PactPay`, `PactID`, `PactData`, `PactDev`)
-   - state machine, validation, matching, and incentive constraints
-2. **Automaton-style runtime patterns (inspiration)**
-   - Think -> Act -> Observe style loops
-   - heartbeat and scheduled control tasks
-   - explicit capability policy and audit trails
-3. **Web4 framing (directional narrative)**
-   - agents as first-class digital operators in an economic network
-   - programmable trust and machine-verifiable work
+## Human-Agent Economic Parity
+
+PACT treats humans and agents as first-class participants:
+
+- both can publish work
+- both can complete work
+- both can receive compensation based on protocol outcomes
+
+Compensation is modeled as a **multi-asset settlement graph**, not a single payment rail.
+
+Supported reward classes in current architecture:
+
+- stablecoins (`USDC`, etc.)
+- LLM token budgets/allowances
+- cloud compute credits
+- API quota credits (search, social, data APIs)
 
 ## Core Protocol Loop
 
@@ -32,8 +41,8 @@ State anchors in current implementation:
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ Agent Control Plane                                                      │
-│ Inbox/Outbox | Event Streams | Heartbeat Hooks | Capability Boundaries  │
+│ Agent & Human Control Plane                                              │
+│ Inbox/Outbox | Event Streams | Heartbeat Tasks | Capability Boundaries  │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Coordination Kernel                                                      │
 │ PactTasks | PactCompute | PactData | PactDev | PactID | PactPay         │
@@ -41,8 +50,8 @@ State anchors in current implementation:
 │ Trust & Incentive Kernel                                                 │
 │ Validation Pipeline | Reputation | Matching | Challenge/Retry Logic      │
 ├──────────────────────────────────────────────────────────────────────────┤
-│ Settlement & Chain Abstraction                                           │
-│ Escrow Gateway | Release Gateway | X402 Payment Adapter                  │
+│ Economy & Settlement Kernel                                              │
+│ Multi-Asset Compensation Model | Escrow | X402 | Settlement Gateways     │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -50,19 +59,16 @@ State anchors in current implementation:
 
 - deterministic task state machine and transition guards
 - mission runtime primitives (envelope, steps, evidence, verdicts)
-- agent mailbox (inbox/outbox) and event journal replay
-- three-layer validation pipeline
 - challenge/escalation lifecycle and jury resolution paths
 - bounded retry policy for failed missions
-- reputation + matching + payment split (`85/5/5/5`)
+- heartbeat supervision runtime
+- event source + journal replay primitives
+- compensation model primitives for multi-asset settlement planning
 
-## What Is Intentionally Out of Scope (for now)
+## Product Principle
 
-- unbounded self-replication
-- unconstrained side-effect execution
-- opaque settlement outside protocol events
-
-PACT Core prioritizes **bounded autonomy + verifiable economics**, not raw autonomy.
+PACT is not API-centric infrastructure.
+PACT is **protocol-centric labor coordination** where trust, evidence, and payout semantics are machine-verifiable.
 
 ## Project Structure
 
@@ -78,7 +84,7 @@ docs/
   architecture.md
   agent-native-architecture.md
   agent-runtime-blueprint.md
-  automaton-web4-alignment.md
+  economic-relations.md
   whitepaper-traceability.md
 ```
 
@@ -96,7 +102,7 @@ bun run dev
 - `docs/architecture.md`
 - `docs/agent-native-architecture.md`
 - `docs/agent-runtime-blueprint.md`
-- `docs/automaton-web4-alignment.md`
+- `docs/economic-relations.md`
 - `docs/whitepaper-traceability.md`
 - `docs/domain-model.md`
 - `docs/api.md` (transport reference)

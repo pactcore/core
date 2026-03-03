@@ -1,3 +1,5 @@
+import type { CompensationModel } from "./economics";
+
 export type TaskStatus = "Created" | "Assigned" | "Submitted" | "Verified" | "Completed";
 
 export type ParticipantRole = "worker" | "validator" | "issuer" | "agent" | "jury";
@@ -161,6 +163,7 @@ export interface MissionEnvelope {
   title: string;
   budgetCents: number;
   context: MissionContext;
+  compensationModel?: CompensationModel;
   status: MissionStatus;
   targetAgentIds: string[];
   claimedBy?: string;

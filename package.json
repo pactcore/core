@@ -1,6 +1,6 @@
 {
   "name": "pact-network-core-bun",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "PACT Network core framework implemented with Bun + TypeScript",
   "type": "module",
   "module": "src/index.ts",

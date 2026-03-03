@@ -135,6 +135,29 @@ export function createApp(validationConfig?: ValidationConfig) {
     return c.json(asset, 201);
   });
 
+  app.post("/economics/assets", async (c) => {
+    const body = await c.req.json();
+    const asset = await container.pactEconomics.registerAsset({
+      id: body.id ? String(body.id) : undefined,
+      kind: body.kind,
+      symbol: String(body.symbol),
+      network: body.network ? String(body.network) : undefined,
+      issuer: body.issuer ? String(body.issuer) : undefined,
+      metadata: body.metadata,
+    });
+    return c.json(asset, 201);
+  });
+
+  app.get("/economics/assets", async (c) => {
+    return c.json(await container.pactEconomics.listAssets());
+  });
+
+  app.post("/economics/quote", async (c) => {
+    const body = await c.req.json();
+    const quote = await container.pactEconomics.quoteCompensation(body);
+    return c.json(quote);
+  });
+
   app.post("/dev/integrations", async (c) => {
     const body = await c.req.json();
     const integration = await container.pactDev.register({

@@ -19,6 +19,7 @@ import { PactOrchestrator } from "./orchestrator";
 import { PactCompute } from "./modules/pact-compute";
 import { PactData } from "./modules/pact-data";
 import { PactDev } from "./modules/pact-dev";
+import { PactEconomics } from "./modules/pact-economics";
 import { PactHeartbeat } from "./modules/pact-heartbeat";
 import { PactID } from "./modules/pact-id";
 import { PactMissions } from "./modules/pact-missions";
@@ -34,6 +35,7 @@ export interface PactContainer {
   pactDev: PactDev;
   pactMissions: PactMissions;
   pactHeartbeat: PactHeartbeat;
+  pactEconomics: PactEconomics;
   eventJournal: InMemoryEventJournal;
   agentMailbox: InMemoryAgentMailbox;
 }
@@ -72,6 +74,7 @@ export function createContainer(config: ValidationConfig = recommendedValidation
     eventBus,
   );
   const pactHeartbeat = new PactHeartbeat(heartbeatSupervisor, eventBus);
+  const pactEconomics = new PactEconomics();
 
   const orchestrator = new PactOrchestrator(
     eventBus,
@@ -91,6 +94,7 @@ export function createContainer(config: ValidationConfig = recommendedValidation
     pactDev,
     pactMissions,
     pactHeartbeat,
+    pactEconomics,
     eventJournal,
     agentMailbox,
   };

@@ -15,31 +15,31 @@ UnderReview + disagreement/low-confidence -> ChallengeOpened -> JuryResolution -
 
 ## 2) Loop Semantics
 
-Worker-side conceptual loop:
-
-1. pull inbox / poll events
+1. poll inbox/events
 2. claim mission
-3. execute steps (tool calls, artifact production)
+3. append execution steps
 4. submit evidence bundle
-5. wait for verdict/challenge events
+5. observe verdict/challenge events
 6. settle or retry
 
-## 3) Core Runtime Components
+## 3) Economic Semantics
 
-- **Mission Envelope**: objective, constraints, budget, retry policy
-- **Execution Step**: machine-logged action record
-- **Evidence Bundle**: artifact links + hash + provenance
-- **Verdict**: approve/reject + confidence + reviewer metadata
-- **Challenge**: formal escalation object with resolution state
+Mission envelopes may carry `CompensationModel`.
+A settlement may include multiple assets in one mission:
+
+- stablecoin leg(s)
+- LLM token leg(s)
+- cloud credit leg(s)
+- API quota leg(s)
 
 ## 4) Governance Gates
 
-- capability checks before claim/execute/submit/verdict actions
-- bounded retries to prevent infinite loops
-- explicit escalation events for disagreement and low confidence
-- jury resolution path for contested outcomes
+- capability policy for claim/execute/submit/verdict
+- bounded retry count
+- explicit challenge lifecycle
+- jury-driven conflict resolution
 
-## 5) Event Contract (Examples)
+## 5) Event Contract (Current)
 
 - `mission.created`
 - `mission.claimed`
@@ -52,11 +52,12 @@ Worker-side conceptual loop:
 - `mission.retried`
 - `mission.settled`
 - `mission.failed`
+- `heartbeat.task_*`
 
 ## 6) Productionization Checklist
 
-- persistent mailbox backend
-- durable event log store
-- mission replay tooling
-- risk simulation for policy changes
-- audit dashboards for challenge and settlement paths
+- durable mailbox backend
+- persistent event log store
+- compensation settlement connectors by asset class
+- challenge anti-spam economics
+- operational dashboards for mission and settlement states

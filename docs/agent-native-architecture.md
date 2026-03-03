@@ -2,67 +2,59 @@
 
 ## A. Runtime Primitives
 
-PACT should expose these primitives as first-class protocol concepts:
+1. **Participant Identity** (human or agent)
+2. **Mission Envelope** (objective, constraints, budget, compensation model)
+3. **Execution Step** (action-level trace)
+4. **Evidence Bundle** (artifacts + hash + provenance)
+5. **Verdict** (approval + confidence)
+6. **Challenge** (escalation object)
+7. **Settlement Outcome** (multi-asset compensation realization)
 
-1. **Agent Identity**
-   - role, capabilities, trust level, operator metadata
-2. **Mission**
-   - objective, constraints, budget, deadline, escalation policy
-3. **Execution Step**
-   - tool call, artifact creation, evidence output
-4. **Evidence Bundle**
-   - hashes, provenance, signatures, validator annotations
-5. **Verdict**
-   - confidence, disagreement set, appeal route
-6. **Settlement Outcome**
-   - final payouts + reputation deltas
+## B. Multi-Actor Patterns
 
-## B. Multi-Agent Patterns
+### Pattern 1: Worker Agent + Validator Ring
 
-### Pattern 1: Single Worker + Validator Ring
+- issuer publishes mission
+- worker agent executes and submits evidence
+- validator ring reviews confidence
+- jury resolves escalations when triggered
 
-- Issuer creates mission
-- Worker agent executes and submits evidence
-- Validator ring scores confidence and detects anomalies
-- Human jury only activates on disagreement threshold
+### Pattern 2: Human-Agent Co-Execution
 
-### Pattern 2: Specialist Swarm
+- human contributor handles exception/edge tasks
+- agent handles scalable execution steps
+- both receive compensation legs in final settlement graph
 
-- Mission decomposes into subtasks (data, compute, verification)
-- Different agents claim subtasks based on capability profile
-- Aggregator agent composes final artifact
-- Protocol validates composition integrity before settlement
+### Pattern 3: Service-Credit Missions
 
-### Pattern 3: Continuous Monitoring Agent
-
-- Long-running agent audits previously completed missions
-- Emits challenge events when drift/fraud signals emerge
-- Triggers re-validation or slashing workflows (future phase)
+- output is compensated by API quota or cloud credits instead of only stablecoins
+- useful for infrastructure-heavy agent workflows
 
 ## C. Capability and Safety Model
 
-For agent-native software, capability control is mandatory:
+- role-scoped permissions
+- policy checks before side effects
+- bounded retries
+- explicit challenge paths
+- event-backed auditability
 
-- scoped permissions per role and mission
-- policy checks before side-effectful actions
-- immutable evidence trail for all state-affecting actions
-- bounded autonomous retries to avoid runaway loops
+## D. Product Focus
 
-## D. Product Focus Shift
-
-Do not design around endpoint count.
-Design around:
+Design for:
 
 - mission throughput
 - evidence quality
-- dispute resolution latency
-- economic fairness
-- robustness under adversarial behavior
+- escalation latency
+- fairness of compensation distribution
+- resilience under adversarial behavior
 
-## E. Near-Term Implementation Targets
+## E. Implementation Status (Current)
 
-1. Agent mission envelope type in domain layer
-2. Event contract for inbox/outbox and subscription cursors
-3. Capability policy contract per role
-4. Evidence schema normalization for machine validation
-5. Replayable execution journal for audit and learning
+Implemented in runtime:
+
+- mission envelope and lifecycle
+- inbox/outbox + event journal replay
+- capability policy checks
+- challenge/escalation and jury resolution
+- heartbeat supervision hooks
+- multi-asset compensation model primitives
