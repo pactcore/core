@@ -13,6 +13,7 @@ import type {
   EvidenceBundle,
   ExecutionStep,
   ExecutionStepKind,
+  MissionChallenge,
   MissionContext,
   MissionEnvelope,
   ValidationVerdict,
@@ -54,6 +55,14 @@ export interface RecordVerdictInput {
   notes?: string;
 }
 
+export interface ResolveMissionChallengeInput {
+  missionId: string;
+  challengeId: string;
+  resolverId: string;
+  approve: boolean;
+  notes?: string;
+}
+
 export class PactMissions {
   private readonly stateMachine = new MissionStateMachine();
 
@@ -83,8 +92,10 @@ export class PactMissions {
       executionSteps: [],
       evidenceBundles: [],
       verdicts: [],
+      challenges: [],
       retryCount: 0,
       maxRetries: input.maxRetries ?? this.capabilityPolicy.getMaxAutonomousRetries(),
+      escalationCount: 0,
       createdAt: now,
       updatedAt: now,
     };
@@ -182,8 +193,7 @@ export class PactMissions {
       createdAt: Date.now(),
     };
 
-    const nextStatus = mission.status === "InProgress" ? "InProgress" : "InProgress";
-    const progressed = this.stateMachine.transition(mission, nextStatus);
+    const progressed = this.stateMachine.transition(mission, "InProgress");
 
     const updated: MissionEnvelope = {
       ...progressed,
@@ -251,6 +261,10 @@ export class PactMissions {
 
   async recordVerdict(input: RecordVerdictInput): Promise<ValidationVerdict> {
     const mission = await this.getMissionOrThrow(input.missionId);
+    if (mission.status === "Settled" || mission.status === "Cancelled") {
+      throw new Error(`Mission ${mission.id} is terminal: ${mission.status}`);
+    }
+
     const reviewer = await this.participantRepository.getById(input.reviewerId);
     if (!reviewer) {
       throw new NotFoundError("Participant", input.reviewerId);
@@ -268,17 +282,71 @@ export class PactMissions {
       createdAt: Date.now(),
     };
 
-    let nextStatus: MissionEnvelope["status"] = "UnderReview";
-    if (!input.approve) {
-      nextStatus = "Failed";
-    } else if (input.confidence >= this.capabilityPolicy.getEscalationThresholdScore()) {
-      nextStatus = "Settled";
+    const verdicts = [...mission.verdicts, verdict];
+    const hasApprove = verdicts.some((entry) => entry.approve);
+    const hasReject = verdicts.some((entry) => !entry.approve);
+
+    if (hasApprove && hasReject) {
+      const challenge = this.openChallenge(
+        mission,
+        "verdict_disagreement",
+        verdicts.map((entry) => entry.id),
+      );
+
+      const updated: MissionEnvelope = {
+        ...this.stateMachine.transition(mission, "UnderReview"),
+        verdicts,
+        challenges: [...mission.challenges, challenge],
+        escalationCount: mission.escalationCount + 1,
+        updatedAt: Date.now(),
+      };
+
+      await this.missionRepository.save(updated);
+      await this.publishVerdictAndChallengeEvents(mission.id, verdict, updated.status, challenge);
+      return verdict;
     }
 
-    const transitioned = this.stateMachine.transition(mission, nextStatus);
+    if (!input.approve) {
+      const failed = this.stateMachine.transition(mission, "Failed");
+      const updated: MissionEnvelope = {
+        ...failed,
+        verdicts,
+        updatedAt: Date.now(),
+      };
+
+      await this.missionRepository.save(updated);
+      await this.eventBus.publish({
+        name: DomainEvents.MissionVerdictRecorded,
+        payload: { missionId: mission.id, verdict, status: updated.status },
+        createdAt: Date.now(),
+      });
+      await this.eventBus.publish({
+        name: DomainEvents.MissionFailed,
+        payload: { missionId: mission.id, reason: verdict.notes ?? "validator_reject" },
+        createdAt: Date.now(),
+      });
+      return verdict;
+    }
+
+    if (input.confidence < this.capabilityPolicy.getEscalationThresholdScore()) {
+      const challenge = this.openChallenge(mission, "low_confidence", [verdict.id]);
+      const updated: MissionEnvelope = {
+        ...this.stateMachine.transition(mission, "UnderReview"),
+        verdicts,
+        challenges: [...mission.challenges, challenge],
+        escalationCount: mission.escalationCount + 1,
+        updatedAt: Date.now(),
+      };
+
+      await this.missionRepository.save(updated);
+      await this.publishVerdictAndChallengeEvents(mission.id, verdict, updated.status, challenge);
+      return verdict;
+    }
+
+    const settled = this.stateMachine.transition(mission, "Settled");
     const updated: MissionEnvelope = {
-      ...transitioned,
-      verdicts: [...transitioned.verdicts, verdict],
+      ...settled,
+      verdicts,
       updatedAt: Date.now(),
     };
 
@@ -298,6 +366,102 @@ export class PactMissions {
       payload: { missionId: mission.id, verdict, status: updated.status },
       createdAt: Date.now(),
     });
+    await this.eventBus.publish({
+      name: DomainEvents.MissionSettled,
+      payload: { missionId: mission.id },
+      createdAt: Date.now(),
+    });
+
+    return verdict;
+  }
+
+  async retryMission(missionId: string, reason = "automatic_retry"): Promise<MissionEnvelope> {
+    const mission = await this.getMissionOrThrow(missionId);
+    if (mission.status !== "Failed") {
+      throw new Error(`Mission ${mission.id} is not failed and cannot be retried`);
+    }
+
+    if (mission.retryCount >= mission.maxRetries) {
+      throw new Error(`Mission ${mission.id} exceeded max retries (${mission.maxRetries})`);
+    }
+
+    const reopened = this.stateMachine.transition(mission, "Open");
+    const updated: MissionEnvelope = {
+      ...reopened,
+      claimedBy: undefined,
+      retryCount: mission.retryCount + 1,
+      updatedAt: Date.now(),
+    };
+
+    await this.missionRepository.save(updated);
+
+    const recipients = updated.targetAgentIds.length > 0
+      ? updated.targetAgentIds
+      : updated.executionSteps.map((step) => step.agentId);
+
+    for (const agentId of recipients) {
+      await this.mailbox.enqueueInbox(agentId, "mission.retry_available", {
+        missionId: updated.id,
+        retryCount: updated.retryCount,
+      });
+    }
+
+    await this.eventBus.publish({
+      name: DomainEvents.MissionRetried,
+      payload: { missionId: updated.id, retryCount: updated.retryCount, reason },
+      createdAt: Date.now(),
+    });
+
+    return updated;
+  }
+
+  async resolveMissionChallenge(input: ResolveMissionChallengeInput): Promise<MissionEnvelope> {
+    const mission = await this.getMissionOrThrow(input.missionId);
+    const resolver = await this.participantRepository.getById(input.resolverId);
+    if (!resolver) {
+      throw new NotFoundError("Participant", input.resolverId);
+    }
+    this.capabilityPolicy.assert(resolver.role, "verdict.submit");
+
+    const challenge = mission.challenges.find((entry) => entry.id === input.challengeId);
+    if (!challenge) {
+      throw new Error(`Challenge ${input.challengeId} not found on mission ${mission.id}`);
+    }
+    if (challenge.status !== "open") {
+      throw new Error(`Challenge ${input.challengeId} is already resolved`);
+    }
+
+    const resolvedChallenge: MissionChallenge = {
+      ...challenge,
+      status: "resolved",
+      resolvedAt: Date.now(),
+      resolution: input.approve ? "approved" : "rejected",
+      resolutionNotes: input.notes,
+    };
+
+    const updatedChallenges = mission.challenges.map((entry) =>
+      entry.id === resolvedChallenge.id ? resolvedChallenge : entry,
+    );
+
+    const transitioned = this.stateMachine.transition(mission, input.approve ? "Settled" : "Failed");
+    const updated: MissionEnvelope = {
+      ...transitioned,
+      challenges: updatedChallenges,
+      updatedAt: Date.now(),
+    };
+
+    await this.missionRepository.save(updated);
+
+    await this.eventBus.publish({
+      name: DomainEvents.MissionChallengeResolved,
+      payload: {
+        missionId: mission.id,
+        challengeId: resolvedChallenge.id,
+        resolverId: input.resolverId,
+        resolution: resolvedChallenge.resolution,
+      },
+      createdAt: Date.now(),
+    });
 
     if (updated.status === "Settled") {
       await this.eventBus.publish({
@@ -305,17 +469,15 @@ export class PactMissions {
         payload: { missionId: mission.id },
         createdAt: Date.now(),
       });
-    }
-
-    if (updated.status === "Failed") {
+    } else {
       await this.eventBus.publish({
         name: DomainEvents.MissionFailed,
-        payload: { missionId: mission.id, reason: verdict.notes ?? "validator_reject" },
+        payload: { missionId: mission.id, reason: input.notes ?? "challenge_rejected" },
         createdAt: Date.now(),
       });
     }
 
-    return verdict;
+    return updated;
   }
 
   async getMission(missionId: string): Promise<MissionEnvelope> {
@@ -332,5 +494,54 @@ export class PactMissions {
       throw new NotFoundError("Mission", missionId);
     }
     return mission;
+  }
+
+  private openChallenge(
+    mission: MissionEnvelope,
+    reason: MissionChallenge["reason"],
+    triggeredByVerdictIds: string[],
+  ): MissionChallenge {
+    return {
+      id: generateId("challenge"),
+      missionId: mission.id,
+      reason,
+      status: "open",
+      triggeredByVerdictIds,
+      openedAt: Date.now(),
+    };
+  }
+
+  private async publishVerdictAndChallengeEvents(
+    missionId: string,
+    verdict: ValidationVerdict,
+    status: MissionEnvelope["status"],
+    challenge: MissionChallenge,
+  ): Promise<void> {
+    await this.eventBus.publish({
+      name: DomainEvents.MissionVerdictRecorded,
+      payload: { missionId, verdict, status },
+      createdAt: Date.now(),
+    });
+
+    await this.eventBus.publish({
+      name: DomainEvents.MissionChallengeOpened,
+      payload: {
+        missionId,
+        challengeId: challenge.id,
+        reason: challenge.reason,
+        triggeredByVerdictIds: challenge.triggeredByVerdictIds,
+      },
+      createdAt: Date.now(),
+    });
+
+    await this.eventBus.publish({
+      name: DomainEvents.MissionEscalated,
+      payload: {
+        missionId,
+        challengeId: challenge.id,
+        reason: challenge.reason,
+      },
+      createdAt: Date.now(),
+    });
   }
 }

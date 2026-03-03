@@ -11,6 +11,10 @@ export const DomainEvents = {
   MissionExecutionStepAppended: "mission.execution_step_appended",
   MissionEvidenceSubmitted: "mission.evidence_submitted",
   MissionVerdictRecorded: "mission.verdict_recorded",
+  MissionChallengeOpened: "mission.challenge_opened",
+  MissionChallengeResolved: "mission.challenge_resolved",
+  MissionEscalated: "mission.escalated",
+  MissionRetried: "mission.retried",
   MissionSettled: "mission.settled",
   MissionFailed: "mission.failed",
 } as const;

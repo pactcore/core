@@ -141,6 +141,20 @@ export interface ValidationVerdict {
   createdAt: number;
 }
 
+export type MissionChallengeStatus = "open" | "resolved";
+
+export interface MissionChallenge {
+  id: string;
+  missionId: string;
+  reason: "verdict_disagreement" | "low_confidence" | "manual_escalation";
+  status: MissionChallengeStatus;
+  triggeredByVerdictIds: string[];
+  openedAt: number;
+  resolvedAt?: number;
+  resolution?: "approved" | "rejected";
+  resolutionNotes?: string;
+}
+
 export interface MissionEnvelope {
   id: string;
   issuerId: string;
@@ -153,8 +167,10 @@ export interface MissionEnvelope {
   executionSteps: ExecutionStep[];
   evidenceBundles: EvidenceBundle[];
   verdicts: ValidationVerdict[];
+  challenges: MissionChallenge[];
   retryCount: number;
   maxRetries: number;
+  escalationCount: number;
   createdAt: number;
   updatedAt: number;
 }
