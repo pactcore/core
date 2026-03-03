@@ -8,7 +8,7 @@
 
 `POST /id/participants`
 
-Request example:
+Example payload:
 
 ```json
 {
@@ -30,12 +30,12 @@ Request example:
 
 `POST /tasks/:id/assign`
 
-- 指定 `workerId` 为显式指派
-- 不传 `workerId` 则触发自动匹配
+- With `workerId`: explicit assignment
+- Without `workerId`: automatic matching
 
 `POST /tasks/:id/submit`
 
-提交证据后自动触发三层验证与结算编排。
+Submitting evidence triggers validation + settlement orchestration.
 
 `GET /tasks`
 
