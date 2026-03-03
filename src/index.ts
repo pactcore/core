@@ -8,3 +8,5 @@ export { GaleShapleyMatcher } from "./domain/matching";
 export { PaymentSplitService } from "./domain/payment-split";
 export { CapabilityPolicyEngine, recommendedCapabilityPolicy } from "./domain/capability-policy";
 export { PactMissions } from "./application/modules/pact-missions";
+export { PactHeartbeat } from "./application/modules/pact-heartbeat";
+export { InMemoryHeartbeatSupervisor } from "./infrastructure/heartbeat/in-memory-heartbeat-supervisor";

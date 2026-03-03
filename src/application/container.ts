@@ -5,6 +5,7 @@ import { InMemoryAgentMailbox } from "../infrastructure/agent/in-memory-agent-ma
 import { InMemoryEventBus } from "../infrastructure/event-bus/in-memory-event-bus";
 import { InMemoryEventJournal } from "../infrastructure/event-bus/in-memory-event-journal";
 import { InMemoryX402PaymentAdapter } from "../infrastructure/payment/in-memory-x402-payment-adapter";
+import { InMemoryHeartbeatSupervisor } from "../infrastructure/heartbeat/in-memory-heartbeat-supervisor";
 import { InMemoryMissionRepository } from "../infrastructure/repositories/in-memory-mission-repository";
 import { InMemoryParticipantRepository } from "../infrastructure/repositories/in-memory-participant-repository";
 import { InMemoryReputationRepository } from "../infrastructure/repositories/in-memory-reputation-repository";
@@ -18,6 +19,7 @@ import { PactOrchestrator } from "./orchestrator";
 import { PactCompute } from "./modules/pact-compute";
 import { PactData } from "./modules/pact-data";
 import { PactDev } from "./modules/pact-dev";
+import { PactHeartbeat } from "./modules/pact-heartbeat";
 import { PactID } from "./modules/pact-id";
 import { PactMissions } from "./modules/pact-missions";
 import { PactPay } from "./modules/pact-pay";
@@ -31,6 +33,7 @@ export interface PactContainer {
   pactData: PactData;
   pactDev: PactDev;
   pactMissions: PactMissions;
+  pactHeartbeat: PactHeartbeat;
   eventJournal: InMemoryEventJournal;
   agentMailbox: InMemoryAgentMailbox;
 }
@@ -50,6 +53,7 @@ export function createContainer(config: ValidationConfig = recommendedValidation
   const taskManager = new InMemoryTaskManager(taskRepository, stateMachine);
 
   const scheduler = new InMemoryScheduler();
+  const heartbeatSupervisor = new InMemoryHeartbeatSupervisor(scheduler);
   const reputationService = new InMemoryReputationService(reputationRepository);
   const validatorConsensus = new InMemoryValidatorConsensus(config);
   const blockchain = new InMemoryBaseChainGateway();
@@ -67,6 +71,7 @@ export function createContainer(config: ValidationConfig = recommendedValidation
     agentMailbox,
     eventBus,
   );
+  const pactHeartbeat = new PactHeartbeat(heartbeatSupervisor, eventBus);
 
   const orchestrator = new PactOrchestrator(
     eventBus,
@@ -85,6 +90,7 @@ export function createContainer(config: ValidationConfig = recommendedValidation
     pactData,
     pactDev,
     pactMissions,
+    pactHeartbeat,
     eventJournal,
     agentMailbox,
   };

@@ -17,4 +17,9 @@ export const DomainEvents = {
   MissionRetried: "mission.retried",
   MissionSettled: "mission.settled",
   MissionFailed: "mission.failed",
+
+  HeartbeatTaskRegistered: "heartbeat.task_registered",
+  HeartbeatTaskExecuted: "heartbeat.task_executed",
+  HeartbeatTaskDisabled: "heartbeat.task_disabled",
+  HeartbeatTaskEnabled: "heartbeat.task_enabled",
 } as const;

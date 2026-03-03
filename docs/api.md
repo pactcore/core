@@ -45,6 +45,34 @@ Submitting evidence triggers validation + settlement orchestration.
 
 `GET /payments/ledger`
 
+## Heartbeat Supervision
+
+`POST /heartbeat/tasks`
+
+Registers a heartbeat control task.
+
+Example payload:
+
+```json
+{
+  "name": "mission-health-check",
+  "intervalMs": 60000,
+  "payload": { "kind": "health" }
+}
+```
+
+`GET /heartbeat/tasks`
+
+Lists registered heartbeat tasks.
+
+`POST /heartbeat/tasks/:id/enable`
+
+`POST /heartbeat/tasks/:id/disable`
+
+`POST /heartbeat/tick`
+
+Executes due heartbeat tasks (optional body `{ "now": <timestamp> }`).
+
 ## Other Modules
 
 - `POST /compute/jobs`

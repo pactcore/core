@@ -91,6 +91,39 @@ export function createApp(validationConfig?: ValidationConfig) {
     return c.json(job, 201);
   });
 
+  app.post("/heartbeat/tasks", async (c) => {
+    const body = await c.req.json();
+    const task = await container.pactHeartbeat.registerTask({
+      name: String(body.name),
+      intervalMs: Number(body.intervalMs),
+      payload: body.payload,
+      startAt: typeof body.startAt === "number" ? body.startAt : undefined,
+    });
+    return c.json(task, 201);
+  });
+
+  app.get("/heartbeat/tasks", async (c) => {
+    return c.json(await container.pactHeartbeat.listTasks());
+  });
+
+  app.post("/heartbeat/tasks/:id/enable", async (c) => {
+    const task = await container.pactHeartbeat.enableTask(c.req.param("id"));
+    return c.json(task);
+  });
+
+  app.post("/heartbeat/tasks/:id/disable", async (c) => {
+    const task = await container.pactHeartbeat.disableTask(c.req.param("id"));
+    return c.json(task);
+  });
+
+  app.post("/heartbeat/tick", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const executions = await container.pactHeartbeat.tick(
+      typeof body.now === "number" ? body.now : undefined,
+    );
+    return c.json(executions);
+  });
+
   app.post("/data/assets", async (c) => {
     const body = await c.req.json();
     const asset = await container.pactData.publish({

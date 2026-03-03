@@ -114,6 +114,36 @@ export interface ScheduledJob {
   runAt: number;
 }
 
+export interface HeartbeatTask {
+  id: string;
+  name: string;
+  intervalMs: number;
+  enabled: boolean;
+  payload?: Record<string, unknown>;
+  lastRunAt?: number;
+  nextRunAt: number;
+}
+
+export interface RegisterHeartbeatTaskInput {
+  name: string;
+  intervalMs: number;
+  payload?: Record<string, unknown>;
+  startAt?: number;
+}
+
+export interface HeartbeatExecution {
+  task: HeartbeatTask;
+  executedAt: number;
+}
+
+export interface HeartbeatSupervisor {
+  registerTask(input: RegisterHeartbeatTaskInput): Promise<HeartbeatTask>;
+  listTasks(): Promise<HeartbeatTask[]>;
+  enableTask(taskId: string): Promise<HeartbeatTask>;
+  disableTask(taskId: string): Promise<HeartbeatTask>;
+  tick(now?: number): Promise<HeartbeatExecution[]>;
+}
+
 export interface X402PaymentAdapter {
   transfer(transfer: PaymentTransfer): Promise<PaymentReceipt>;
   ledger(): Promise<PaymentReceipt[]>;
