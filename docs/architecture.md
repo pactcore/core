@@ -1,48 +1,75 @@
-# Architecture Design
+# PACT Core Architecture
 
-## Layer Model
+## 1) Design Goal
 
-PACT Core follows a layered design:
+PACT Core is built as a **coordination runtime for AI agents**, not just an API server.
 
-1. **Application Layer**
-2. **Infrastructure Layer**
-3. **Blockchain Abstraction Layer**
+The architecture optimizes for:
 
-Application services depend on contracts (interfaces), not concrete implementations.
+- verifiable autonomous execution
+- deterministic state progression
+- adversarial resilience through layered validation
+- incentive alignment through protocol-level settlement
 
-## Event-Driven Orchestration
+## 2) Layered Model
 
-Core domain events:
+### Agent Interaction Plane
 
-- `task.created`
-- `task.assigned`
-- `task.submitted`
-- `task.verified`
-- `task.completed`
-- `task.validation_failed`
+Primary interaction surfaces for autonomous systems:
 
-Execution flow:
+- task inbox/outbox semantics
+- event-driven subscriptions
+- capability-scoped tool execution
+- policy-checked command envelopes
 
-1. `task.submitted` triggers three-layer validation (`ValidatorConsensus`).
-2. If validation passes, state moves to `Verified` and emits `task.verified`.
-3. `task.verified` triggers payout settlement (`PactPay`) and escrow release.
-4. After settlement, state moves to `Completed`.
+### Coordination Kernel
 
-## Blockchain Abstraction
+The six whitepaper modules are orchestrated here:
 
-`BlockchainGateway` abstracts chain interaction:
+- `PactTasks`
+- `PactCompute`
+- `PactPay`
+- `PactID`
+- `PactData`
+- `PactDev`
 
-- `createEscrow(taskId, payerId, amountCents)`
-- `releaseEscrow(taskId, payouts)`
-- `getEscrow(taskId)`
+### Trust & Incentive Plane
 
-Current adapter is `InMemoryBaseChainGateway`. It can be replaced by a real Base-chain contract gateway later.
+Trust is not implied; it is computed:
 
-## Infrastructure Components
+- validation pipeline: Auto AI -> Agent Validators -> Human Jury
+- reputation updates with bounded scores
+- constraint-aware matching
+- transfer and split accounting
 
-- **Task Manager**: lifecycle state transitions and persistence orchestration
-- **Validator Consensus**: three-layer validation decision engine
-- **Reputation Service**: score query and mutation (0-100)
-- **Scheduler**: compute job scheduling and due execution
-- **X402 Payment Adapter**: transfer recording and payment abstraction
-- **Event Bus**: in-process pub/sub for orchestration
+### Settlement & Chain Abstraction
+
+Chain concerns are isolated behind gateways:
+
+- escrow creation
+- escrow release
+- settlement query
+
+## 3) Protocol-Critical Invariants
+
+1. A task cannot skip lifecycle states.
+2. Payment release requires verified completion.
+3. Reputation mutation is bounded and explicit.
+4. Matching obeys skill/distance/reputation/capacity constraints.
+5. Event flow is append-only in logical progression.
+
+## 4) Agent-Native Runtime Direction
+
+PACT Core should evolve toward long-lived agent missions:
+
+- mission context windows (not only stateless requests)
+- conflict resolution among concurrent agents
+- retries and compensating transitions for partial failures
+- explicit machine-judgment evidence schema
+
+## 5) Why API Is Not the Center
+
+REST endpoints are currently a transport convenience.
+
+The product center is the **protocol state graph + event semantics + incentive logic**.
+Any transport (REST, MCP, queue, streaming) must map into the same invariant engine.

@@ -1,59 +1,91 @@
 # PACT Core
 
-PACT Core is the protocol engine of the PACT Network.
-It implements the execution model from the whitepaper: task lifecycle orchestration, multi-layer validation, reputation, matching, escrow settlement, and event-driven application services.
+PACT Core is the protocol brain of the PACT Network.
+It is designed for **AI-agent-native execution**, where autonomous workers, validators, and issuers coordinate through verifiable state transitions, reputation, and programmable settlement.
 
-## Repository Positioning
+## Agent-First Positioning
 
-PACT is split into two repositories:
+PACT is not only a backend service.
+It is a coordination runtime where agents can:
 
-- **`core`** (this repo): protocol logic and service runtime
-- **`sdk`**: developer-facing TypeScript SDK for app and agent integration
+- discover work
+- negotiate assignment
+- submit machine-verifiable evidence
+- pass through layered validation
+- receive deterministic settlement
+- evolve reputation over time
 
-This separation keeps protocol invariants stable while enabling fast SDK iteration.
+`core` defines these invariants so every agent in the ecosystem plays by the same rules.
 
-## Architecture
+## Core Protocol Loop
+
+```text
+Intent -> Match -> Assign -> Execute -> Submit Evidence -> Validate -> Settle -> Learn
+```
+
+Mapped lifecycle state machine:
+
+`Created -> Assigned -> Submitted -> Verified -> Completed`
+
+## Architecture (Agent-Oriented)
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                      Application Layer                                   │
-│  PactCompute | PactTasks | PactPay | PactID | PactData | PactDev        │
+│ Agent Interaction Plane                                                  │
+│ Agent Inbox/Outbox | Event Streams | Policy-Gated Tool Calls            │
 ├──────────────────────────────────────────────────────────────────────────┤
-│                    Infrastructure Layer                                  │
-│ Task Manager | Validator Consensus | Reputation | Scheduler              │
-│ X402 Payment Adapter | Event Bus                                         │
+│ Coordination Kernel                                                      │
+│ PactTasks | PactCompute | PactData | PactDev | PactID | PactPay         │
 ├──────────────────────────────────────────────────────────────────────────┤
-│                    Blockchain Abstraction Layer                          │
-│ Escrow Gateway | Settlement Gateway (Base-chain abstraction)             │
+│ Trust & Incentive Plane                                                  │
+│ Validation Pipeline | Reputation Engine | Matching Engine | X402 Ledger  │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Settlement & Chain Abstraction                                           │
+│ Escrow Gateway | Release Gateway (Base-chain abstraction)               │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Core Features
+## Whitepaper Traceability
 
-- Task lifecycle state machine: `Created → Assigned → Submitted → Verified → Completed`
-- Illegal transition protection via `IllegalStateTransitionError`
-- Three-stage validation pipeline:
-  - Auto AI
-  - Agent Validators
-  - Human Jury
-- Reputation model with clamped score range `0-100`
-- Constraint-aware matching (Gale-Shapley variant)
-- Deterministic payment split: `85/5/5/5`
-- Hono REST API + event-driven orchestration
-- In-memory adapters (easy to replace with production backends)
+PACT Core tracks the whitepaper module set:
+
+- **PactCompute**: scheduled compute and machine task execution
+- **PactTasks**: lifecycle orchestration and assignment control
+- **PactPay**: escrow and deterministic split settlement (85/5/5/5)
+- **PactID**: participant identity and role registration
+- **PactData**: data asset publication and provenance entry
+- **PactDev**: developer and integration registration surface
+
+## What Exists Now
+
+- deterministic task state machine + illegal transition protection
+- three-layer validation pipeline (Auto AI -> Agent Validators -> Human Jury)
+- reputation model (0-100 clamp)
+- Gale-Shapley variant matcher with skills/distance/reputation/capacity constraints
+- event-driven orchestration in application layer
+- in-memory adapters for rapid protocol iteration
+
+## What We Are Expanding Next
+
+- agent inbox/outbox and event subscription semantics (beyond request/response)
+- policy and capability contracts for autonomous tool execution
+- long-running multi-agent mission orchestration
+- production adapters (database, queue, chain contracts, observability)
 
 ## Project Structure
 
 ```text
 src/
-  api/
+  api/                  # currently available transport surface (not the product center)
   application/
     modules/
   domain/
   infrastructure/
   blockchain/
-tests/
 docs/
+  architecture.md
+  agent-native-architecture.md
+  whitepaper-traceability.md
 ```
 
 ## Quick Start
@@ -64,32 +96,18 @@ bun test
 bun run dev
 ```
 
-Default server: `http://localhost:3000`
-
-## API Summary
-
-- `POST /id/participants`
-- `GET /id/workers`
-- `POST /tasks`
-- `POST /tasks/:id/assign`
-- `POST /tasks/:id/submit`
-- `GET /tasks`
-- `GET /tasks/:id`
-- `GET /payments/ledger`
-- `POST /compute/jobs`
-- `POST /data/assets`
-- `POST /dev/integrations`
-
 ## Tests
 
 ```bash
 bun test
 ```
 
-Current test suite covers domain rules, validation flow, matching, settlement split, and API orchestration.
+Current suite validates protocol-critical behavior: lifecycle, validation, matching, settlement, and orchestration.
 
-## Docs
+## Documentation
 
 - `docs/architecture.md`
+- `docs/agent-native-architecture.md`
+- `docs/whitepaper-traceability.md`
 - `docs/domain-model.md`
-- `docs/api.md`
+- `docs/api.md` (transport reference)
