@@ -6,10 +6,13 @@ import { InMemoryEventJournal } from "../src/infrastructure/event-bus/in-memory-
 import { InMemoryApiQuotaAllocationConnector } from "../src/infrastructure/settlement/in-memory-api-quota-allocation-connector";
 import { InMemoryCloudCreditBillingConnector } from "../src/infrastructure/settlement/in-memory-cloud-credit-billing-connector";
 import { InMemoryLlmTokenMeteringConnector } from "../src/infrastructure/settlement/in-memory-llm-token-metering-connector";
+import { InMemoryDurableSettlementRecordRepository } from "../src/infrastructure/repositories/in-memory-durable-settlement-record-repository";
 
 describe("PactEconomics", () => {
   it("quotes multi-asset model in a reference asset", async () => {
-    const economics = new PactEconomics();
+    const economics = new PactEconomics({
+      settlementRecordRepository: new InMemoryDurableSettlementRecordRepository(),
+    });
 
     await economics.registerAsset({ id: "usdc-mainnet", kind: "usdc", symbol: "USDC" });
     await economics.registerAsset({ id: "llm-gpt5", kind: "llm_token", symbol: "TOKEN" });
@@ -52,7 +55,9 @@ describe("PactEconomics", () => {
   });
 
   it("creates settlement plan with per-asset rails", async () => {
-    const economics = new PactEconomics();
+    const economics = new PactEconomics({
+      settlementRecordRepository: new InMemoryDurableSettlementRecordRepository(),
+    });
 
     await economics.registerAsset({ id: "usdc-mainnet", kind: "usdc", symbol: "USDC" });
     await economics.registerAsset({ id: "cloud-aws", kind: "cloud_credit", symbol: "AWSC" });
@@ -99,6 +104,7 @@ describe("PactEconomics", () => {
     const journal = new InMemoryEventJournal();
     const eventBus = new InMemoryEventBus(journal);
     const economics = new PactEconomics({
+      settlementRecordRepository: new InMemoryDurableSettlementRecordRepository(),
       eventBus,
       settlementConnectors: {
         llmTokenMetering: new InMemoryLlmTokenMeteringConnector(),

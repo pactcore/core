@@ -25,7 +25,15 @@ export type {
   ApiQuotaAllocationConnector,
   SettlementConnectors,
 } from "./application/settlement-connectors";
+export type {
+  SettlementRecord,
+  SettlementRecordPage,
+  SettlementRecordQueryFilter,
+  SettlementRecordReplayPage,
+  SettlementRecordRepository,
+} from "./application/settlement-records";
 export { InMemoryHeartbeatSupervisor } from "./infrastructure/heartbeat/in-memory-heartbeat-supervisor";
 export { InMemoryLlmTokenMeteringConnector } from "./infrastructure/settlement/in-memory-llm-token-metering-connector";
 export { InMemoryCloudCreditBillingConnector } from "./infrastructure/settlement/in-memory-cloud-credit-billing-connector";
 export { InMemoryApiQuotaAllocationConnector } from "./infrastructure/settlement/in-memory-api-quota-allocation-connector";
+export { InMemoryDurableSettlementRecordRepository } from "./infrastructure/repositories/in-memory-durable-settlement-record-repository";

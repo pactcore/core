@@ -4,6 +4,15 @@ import type {
   SettlementConnectorRequest,
   SettlementConnectors,
 } from "../settlement-connectors";
+import type {
+  SettlementRecord,
+  SettlementRecordPage,
+  SettlementRecordPageRequest,
+  SettlementRecordQueryFilter,
+  SettlementRecordReplayPage,
+  SettlementRecordReplayRequest,
+  SettlementRecordRepository,
+} from "../settlement-records";
 import { generateId } from "../utils";
 import {
   groupCompensationByAsset,
@@ -62,23 +71,6 @@ export interface SettlementPlan {
   lines: AssetSettlementLine[];
 }
 
-export interface SettlementRecord {
-  id: string;
-  settlementId: string;
-  legId: string;
-  assetId: string;
-  rail: "llm_metering" | "cloud_billing" | "api_quota";
-  connector: "llm_token_metering" | "cloud_credit_billing" | "api_quota_allocation";
-  payerId: string;
-  payeeId: string;
-  amount: number;
-  unit: string;
-  status: "applied";
-  externalReference: string;
-  connectorMetadata?: Record<string, string>;
-  createdAt: number;
-}
-
 export interface ExecuteSettlementInput {
   model: CompensationModel;
   settlementId?: string;
@@ -90,13 +82,10 @@ export interface SettlementExecutionResult {
   records: SettlementRecord[];
 }
 
-export interface ListSettlementRecordsFilter {
-  settlementId?: string;
-  assetId?: string;
-  rail?: SettlementRecord["rail"];
-  payerId?: string;
-  payeeId?: string;
-}
+export type ListSettlementRecordsFilter = SettlementRecordQueryFilter;
+export type QuerySettlementRecordsInput = SettlementRecordQueryFilter & SettlementRecordPageRequest;
+export type ReplaySettlementRecordLifecycleInput = SettlementRecordReplayRequest;
+export { type SettlementRecord } from "../settlement-records";
 
 interface ValuationRecord {
   assetId: string;
@@ -107,6 +96,7 @@ interface ValuationRecord {
 }
 
 export interface PactEconomicsOptions {
+  settlementRecordRepository: SettlementRecordRepository;
   eventBus?: EventBus;
   settlementConnectors?: Partial<SettlementConnectors>;
 }
@@ -114,11 +104,12 @@ export interface PactEconomicsOptions {
 export class PactEconomics {
   private readonly assets = new Map<string, CompensationAsset>();
   private readonly valuations = new Map<string, ValuationRecord>();
-  private readonly settlementRecords = new Map<string, SettlementRecord>();
+  private readonly settlementRecordRepository: SettlementRecordRepository;
   private readonly eventBus?: EventBus;
   private readonly settlementConnectors?: Partial<SettlementConnectors>;
 
-  constructor(options: PactEconomicsOptions = {}) {
+  constructor(options: PactEconomicsOptions) {
+    this.settlementRecordRepository = options.settlementRecordRepository;
     this.eventBus = options.eventBus;
     this.settlementConnectors = options.settlementConnectors;
   }
@@ -319,7 +310,7 @@ export class PactEconomics {
         createdAt: connectorResult.result.processedAt,
       };
 
-      this.settlementRecords.set(record.id, record);
+      await this.settlementRecordRepository.append(record);
       records.push(record);
       await this.publishSettlementRecordCreated(settlementId, record);
     }
@@ -335,38 +326,49 @@ export class PactEconomics {
   }
 
   async listSettlementRecords(filter?: ListSettlementRecordsFilter): Promise<SettlementRecord[]> {
-    return [...this.settlementRecords.values()]
-      .filter((record) => {
-        if (!filter) {
-          return true;
-        }
-        if (filter.settlementId && record.settlementId !== filter.settlementId) {
-          return false;
-        }
-        if (filter.assetId && record.assetId !== filter.assetId) {
-          return false;
-        }
-        if (filter.rail && record.rail !== filter.rail) {
-          return false;
-        }
-        if (filter.payerId && record.payerId !== filter.payerId) {
-          return false;
-        }
-        if (filter.payeeId && record.payeeId !== filter.payeeId) {
-          return false;
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        if (a.createdAt === b.createdAt) {
-          return a.id.localeCompare(b.id);
-        }
-        return a.createdAt - b.createdAt;
+    const records: SettlementRecord[] = [];
+    let cursor: string | undefined;
+
+    while (true) {
+      const page = await this.settlementRecordRepository.query(filter, {
+        cursor,
+        limit: 200,
       });
+      records.push(...page.items);
+      if (!page.nextCursor) {
+        return records;
+      }
+      cursor = page.nextCursor;
+    }
+  }
+
+  async querySettlementRecords(
+    input: QuerySettlementRecordsInput = {},
+  ): Promise<SettlementRecordPage> {
+    const filter: SettlementRecordQueryFilter = {
+      settlementId: input.settlementId,
+      assetId: input.assetId,
+      rail: input.rail,
+      payerId: input.payerId,
+      payeeId: input.payeeId,
+      status: input.status,
+      reconciledBy: input.reconciledBy,
+    };
+
+    return this.settlementRecordRepository.query(filter, {
+      cursor: input.cursor,
+      limit: input.limit,
+    });
+  }
+
+  async replaySettlementRecordLifecycle(
+    input: ReplaySettlementRecordLifecycleInput = {},
+  ): Promise<SettlementRecordReplayPage> {
+    return this.settlementRecordRepository.replay(input);
   }
 
   async getSettlementRecord(recordId: string): Promise<SettlementRecord | undefined> {
-    return this.settlementRecords.get(recordId);
+    return this.settlementRecordRepository.getById(recordId);
   }
 
   private valuationKey(assetId: string, referenceAssetId: string): string {

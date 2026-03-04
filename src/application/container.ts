@@ -9,6 +9,7 @@ import { InMemoryHeartbeatSupervisor } from "../infrastructure/heartbeat/in-memo
 import { InMemoryMissionRepository } from "../infrastructure/repositories/in-memory-mission-repository";
 import { InMemoryParticipantRepository } from "../infrastructure/repositories/in-memory-participant-repository";
 import { InMemoryReputationRepository } from "../infrastructure/repositories/in-memory-reputation-repository";
+import { InMemoryDurableSettlementRecordRepository } from "../infrastructure/repositories/in-memory-durable-settlement-record-repository";
 import { InMemoryTaskRepository } from "../infrastructure/repositories/in-memory-task-repository";
 import { InMemoryWorkerRepository } from "../infrastructure/repositories/in-memory-worker-repository";
 import { InMemoryReputationService } from "../infrastructure/reputation/in-memory-reputation-service";
@@ -49,6 +50,7 @@ export function createContainer(config: ValidationConfig = recommendedValidation
   const workerRepository = new InMemoryWorkerRepository();
   const participantRepository = new InMemoryParticipantRepository();
   const reputationRepository = new InMemoryReputationRepository();
+  const settlementRecordRepository = new InMemoryDurableSettlementRecordRepository();
 
   const eventJournal = new InMemoryEventJournal();
   const eventBus = new InMemoryEventBus(eventJournal);
@@ -78,6 +80,7 @@ export function createContainer(config: ValidationConfig = recommendedValidation
   );
   const pactHeartbeat = new PactHeartbeat(heartbeatSupervisor, eventBus);
   const pactEconomics = new PactEconomics({
+    settlementRecordRepository,
     eventBus,
     settlementConnectors: {
       llmTokenMetering: new InMemoryLlmTokenMeteringConnector(),
