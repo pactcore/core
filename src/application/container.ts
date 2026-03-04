@@ -9,6 +9,7 @@ import { InMemoryHeartbeatSupervisor } from "../infrastructure/heartbeat/in-memo
 import { InMemoryMissionRepository } from "../infrastructure/repositories/in-memory-mission-repository";
 import { InMemoryParticipantRepository } from "../infrastructure/repositories/in-memory-participant-repository";
 import { InMemoryReputationRepository } from "../infrastructure/repositories/in-memory-reputation-repository";
+import { FileBackedDurableSettlementRecordRepository } from "../infrastructure/repositories/file-backed-durable-settlement-record-repository";
 import { InMemoryDurableSettlementRecordRepository } from "../infrastructure/repositories/in-memory-durable-settlement-record-repository";
 import { InMemoryTaskRepository } from "../infrastructure/repositories/in-memory-task-repository";
 import { InMemoryWorkerRepository } from "../infrastructure/repositories/in-memory-worker-repository";
@@ -50,7 +51,12 @@ export function createContainer(config: ValidationConfig = recommendedValidation
   const workerRepository = new InMemoryWorkerRepository();
   const participantRepository = new InMemoryParticipantRepository();
   const reputationRepository = new InMemoryReputationRepository();
-  const settlementRecordRepository = new InMemoryDurableSettlementRecordRepository();
+  const settlementRecordStoreFile = process.env.PACT_SETTLEMENT_RECORD_STORE_FILE;
+  const settlementRecordRepository = settlementRecordStoreFile
+    ? new FileBackedDurableSettlementRecordRepository({
+        filePath: settlementRecordStoreFile,
+      })
+    : new InMemoryDurableSettlementRecordRepository();
 
   const eventJournal = new InMemoryEventJournal();
   const eventBus = new InMemoryEventBus(eventJournal);

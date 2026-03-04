@@ -97,6 +97,15 @@ bun run typecheck
 bun run dev
 ```
 
+### Optional Durable Settlement Record Store
+
+By default, settlement audit records are kept in-memory.
+Set `PACT_SETTLEMENT_RECORD_STORE_FILE` to persist settlement records + lifecycle replay events to disk.
+
+```bash
+PACT_SETTLEMENT_RECORD_STORE_FILE=.data/settlement-records.json bun run dev
+```
+
 ## Documentation
 
 - `docs/architecture.md`
