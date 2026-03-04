@@ -8,6 +8,7 @@ import { InMemoryEventBus } from "../infrastructure/event-bus/in-memory-event-bu
 import { InMemoryEventJournal } from "../infrastructure/event-bus/in-memory-event-journal";
 import { InMemoryX402PaymentAdapter } from "../infrastructure/payment/in-memory-x402-payment-adapter";
 import { InMemoryHeartbeatSupervisor } from "../infrastructure/heartbeat/in-memory-heartbeat-supervisor";
+import { FileBackedMissionRepository } from "../infrastructure/repositories/file-backed-mission-repository";
 import { InMemoryMissionRepository } from "../infrastructure/repositories/in-memory-mission-repository";
 import { InMemoryParticipantRepository } from "../infrastructure/repositories/in-memory-participant-repository";
 import { InMemoryReputationRepository } from "../infrastructure/repositories/in-memory-reputation-repository";
@@ -48,6 +49,7 @@ export interface PactContainer {
 }
 
 export interface PactContainerEnvironment {
+  PACT_MISSION_STORE_FILE?: string;
   PACT_SETTLEMENT_RECORD_STORE_FILE?: string;
   PACT_EVENT_JOURNAL_STORE_FILE?: string;
 }
@@ -63,7 +65,12 @@ export function createContainer(
   const env = options.env ?? process.env;
 
   const taskRepository = new InMemoryTaskRepository();
-  const missionRepository = new InMemoryMissionRepository();
+  const missionStoreFile = env.PACT_MISSION_STORE_FILE;
+  const missionRepository = missionStoreFile
+    ? new FileBackedMissionRepository({
+        filePath: missionStoreFile,
+      })
+    : new InMemoryMissionRepository();
   const workerRepository = new InMemoryWorkerRepository();
   const participantRepository = new InMemoryParticipantRepository();
   const reputationRepository = new InMemoryReputationRepository();

@@ -16,10 +16,55 @@ export interface TaskRepository {
   list(): Promise<Task[]>;
 }
 
+export interface MissionQueryFilter {
+  id?: string;
+  issuerId?: string;
+  status?: MissionEnvelope["status"];
+  claimedBy?: string;
+  targetAgentId?: string;
+  createdAfter?: number;
+  createdBefore?: number;
+  updatedAfter?: number;
+  updatedBefore?: number;
+}
+
+export interface MissionPageRequest {
+  cursor?: string;
+  limit?: number;
+}
+
+export interface MissionPage {
+  items: MissionEnvelope[];
+  nextCursor?: string;
+}
+
+export type MissionLifecycleAction = "created" | "updated";
+
+export interface MissionLifecycleEntry {
+  offset: number;
+  action: MissionLifecycleAction;
+  missionId: string;
+  status: MissionEnvelope["status"];
+  occurredAt: number;
+  mission: MissionEnvelope;
+}
+
+export interface MissionReplayRequest {
+  fromOffset?: number;
+  limit?: number;
+}
+
+export interface MissionReplayPage {
+  entries: MissionLifecycleEntry[];
+  nextOffset?: number;
+}
+
 export interface MissionRepository {
   save(mission: MissionEnvelope): Promise<void>;
   getById(id: string): Promise<MissionEnvelope | undefined>;
   list(): Promise<MissionEnvelope[]>;
+  query(filter?: MissionQueryFilter, page?: MissionPageRequest): Promise<MissionPage>;
+  replay(request?: MissionReplayRequest): Promise<MissionReplayPage>;
 }
 
 export interface ParticipantRepository {

@@ -39,3 +39,4 @@ export { InMemoryCloudCreditBillingConnector } from "./infrastructure/settlement
 export { InMemoryApiQuotaAllocationConnector } from "./infrastructure/settlement/in-memory-api-quota-allocation-connector";
 export { InMemoryDurableSettlementRecordRepository } from "./infrastructure/repositories/in-memory-durable-settlement-record-repository";
 export { FileBackedDurableSettlementRecordRepository } from "./infrastructure/repositories/file-backed-durable-settlement-record-repository";
+export { FileBackedMissionRepository } from "./infrastructure/repositories/file-backed-mission-repository";
