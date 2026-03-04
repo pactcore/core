@@ -1,7 +1,9 @@
+import type { EventJournal } from "./contracts";
 import { recommendedValidationConfig, type ValidationConfig } from "../domain/validation-pipeline";
 import { TaskStateMachine } from "../domain/task-state-machine";
 import { InMemoryBaseChainGateway } from "../infrastructure/blockchain/in-memory-base-chain-gateway";
 import { InMemoryAgentMailbox } from "../infrastructure/agent/in-memory-agent-mailbox";
+import { FileBackedEventJournal } from "../infrastructure/event-bus/file-backed-event-journal";
 import { InMemoryEventBus } from "../infrastructure/event-bus/in-memory-event-bus";
 import { InMemoryEventJournal } from "../infrastructure/event-bus/in-memory-event-journal";
 import { InMemoryX402PaymentAdapter } from "../infrastructure/payment/in-memory-x402-payment-adapter";
@@ -41,24 +43,43 @@ export interface PactContainer {
   pactMissions: PactMissions;
   pactHeartbeat: PactHeartbeat;
   pactEconomics: PactEconomics;
-  eventJournal: InMemoryEventJournal;
+  eventJournal: EventJournal;
   agentMailbox: InMemoryAgentMailbox;
 }
 
-export function createContainer(config: ValidationConfig = recommendedValidationConfig): PactContainer {
+export interface PactContainerEnvironment {
+  PACT_SETTLEMENT_RECORD_STORE_FILE?: string;
+  PACT_EVENT_JOURNAL_STORE_FILE?: string;
+}
+
+export interface CreateContainerOptions {
+  env?: PactContainerEnvironment;
+}
+
+export function createContainer(
+  config: ValidationConfig = recommendedValidationConfig,
+  options: CreateContainerOptions = {},
+): PactContainer {
+  const env = options.env ?? process.env;
+
   const taskRepository = new InMemoryTaskRepository();
   const missionRepository = new InMemoryMissionRepository();
   const workerRepository = new InMemoryWorkerRepository();
   const participantRepository = new InMemoryParticipantRepository();
   const reputationRepository = new InMemoryReputationRepository();
-  const settlementRecordStoreFile = process.env.PACT_SETTLEMENT_RECORD_STORE_FILE;
+  const settlementRecordStoreFile = env.PACT_SETTLEMENT_RECORD_STORE_FILE;
   const settlementRecordRepository = settlementRecordStoreFile
     ? new FileBackedDurableSettlementRecordRepository({
         filePath: settlementRecordStoreFile,
       })
     : new InMemoryDurableSettlementRecordRepository();
 
-  const eventJournal = new InMemoryEventJournal();
+  const eventJournalStoreFile = env.PACT_EVENT_JOURNAL_STORE_FILE;
+  const eventJournal = eventJournalStoreFile
+    ? new FileBackedEventJournal({
+        filePath: eventJournalStoreFile,
+      })
+    : new InMemoryEventJournal();
   const eventBus = new InMemoryEventBus(eventJournal);
   const agentMailbox = new InMemoryAgentMailbox();
 
