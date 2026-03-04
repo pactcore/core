@@ -143,12 +143,45 @@ export interface ValidationVerdict {
   createdAt: number;
 }
 
+export type ChallengeStakeStatus = "posted" | "returned" | "forfeited";
+
+export interface ChallengeStakeDistribution {
+  juryRecipientId: string;
+  juryAmountCents: number;
+  protocolRecipientId: string;
+  protocolAmountCents: number;
+}
+
+export interface ChallengeStakePenalty {
+  payerId: string;
+  payeeId: string;
+  amountCents: number;
+}
+
+export interface ChallengeStake {
+  challengeId: string;
+  challengerId: string;
+  amountCents: number;
+  minimumAmountCents: number;
+  assetId: string;
+  unit: string;
+  status: ChallengeStakeStatus;
+  postedAt: number;
+  returnedAt?: number;
+  forfeitedAt?: number;
+  penalty?: ChallengeStakePenalty;
+  distribution?: ChallengeStakeDistribution;
+}
+
 export type MissionChallengeStatus = "open" | "resolved";
 
 export interface MissionChallenge {
   id: string;
   missionId: string;
+  challengerId: string;
+  counterpartyId: string;
   reason: "verdict_disagreement" | "low_confidence" | "manual_escalation";
+  stake: ChallengeStake;
   status: MissionChallengeStatus;
   triggeredByVerdictIds: string[];
   openedAt: number;

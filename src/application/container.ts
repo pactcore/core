@@ -52,6 +52,13 @@ export interface PactContainerEnvironment {
   PACT_MISSION_STORE_FILE?: string;
   PACT_SETTLEMENT_RECORD_STORE_FILE?: string;
   PACT_EVENT_JOURNAL_STORE_FILE?: string;
+  PACT_CHALLENGE_MIN_STAKE_CENTS?: string;
+  PACT_CHALLENGE_PENALTY_BPS?: string;
+  PACT_CHALLENGE_JURY_SHARE_BPS?: string;
+  PACT_CHALLENGE_PROTOCOL_TREASURY_ID?: string;
+  PACT_CHALLENGE_STAKE_ESCROW_ID?: string;
+  PACT_CHALLENGE_STAKE_ASSET_ID?: string;
+  PACT_CHALLENGE_STAKE_UNIT?: string;
 }
 
 export interface CreateContainerOptions {
@@ -111,6 +118,19 @@ export function createContainer(
     participantRepository,
     agentMailbox,
     eventBus,
+    undefined,
+    {
+      settlementRecordRepository,
+      challengeStakePolicy: {
+        minimumStakeCents: parseIntegerEnv(env.PACT_CHALLENGE_MIN_STAKE_CENTS, 500),
+        penaltyBps: parseIntegerEnv(env.PACT_CHALLENGE_PENALTY_BPS, 2_000),
+        juryShareBps: parseIntegerEnv(env.PACT_CHALLENGE_JURY_SHARE_BPS, 7_000),
+        protocolTreasuryId: env.PACT_CHALLENGE_PROTOCOL_TREASURY_ID ?? "protocol:treasury",
+        stakeEscrowId: env.PACT_CHALLENGE_STAKE_ESCROW_ID ?? "challenge:escrow",
+        assetId: env.PACT_CHALLENGE_STAKE_ASSET_ID ?? "USDC",
+        unit: env.PACT_CHALLENGE_STAKE_UNIT ?? "USDC_CENTS",
+      },
+    },
   );
   const pactHeartbeat = new PactHeartbeat(heartbeatSupervisor, eventBus);
   const pactEconomics = new PactEconomics({
@@ -145,4 +165,17 @@ export function createContainer(
     eventJournal,
     agentMailbox,
   };
+}
+
+function parseIntegerEnv(value: string | undefined, fallback: number): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`invalid integer environment value: ${value}`);
+  }
+
+  return parsed;
 }

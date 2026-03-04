@@ -5,11 +5,20 @@ import type {
   ParticipantRepository,
 } from "../contracts";
 import { DomainEvents } from "../events";
+import type { SettlementRecord, SettlementRecordRepository } from "../settlement-records";
 import { generateId } from "../utils";
-import { NotFoundError } from "../../domain/errors";
 import { CapabilityPolicyEngine } from "../../domain/capability-policy";
+import {
+  calculateChallengePenalty,
+  postChallengeStake,
+  settleChallengeStakeRejected,
+  settleChallengeStakeUpheld,
+  splitForfeitedChallengeStake,
+} from "../../domain/challenge-stake";
 import { validateCompensationModel } from "../../domain/economics";
+import { NotFoundError } from "../../domain/errors";
 import { MissionStateMachine } from "../../domain/mission-state-machine";
+import type { CompensationModel } from "../../domain/economics";
 import type {
   EvidenceBundle,
   ExecutionStep,
@@ -19,7 +28,6 @@ import type {
   MissionEnvelope,
   ValidationVerdict,
 } from "../../domain/types";
-import type { CompensationModel } from "../../domain/economics";
 
 export interface CreateMissionInput {
   issuerId: string;
@@ -56,6 +64,18 @@ export interface RecordVerdictInput {
   approve: boolean;
   confidence: number;
   notes?: string;
+  challengeStakeCents?: number;
+  challengeCounterpartyId?: string;
+}
+
+export interface OpenMissionChallengeInput {
+  missionId: string;
+  challengerId: string;
+  counterpartyId: string;
+  reason: MissionChallenge["reason"];
+  stakeAmountCents?: number;
+  triggeredByVerdictIds?: string[];
+  notes?: string;
 }
 
 export interface ResolveMissionChallengeInput {
@@ -66,8 +86,37 @@ export interface ResolveMissionChallengeInput {
   notes?: string;
 }
 
+export interface ChallengeStakePolicy {
+  minimumStakeCents: number;
+  penaltyBps: number;
+  juryShareBps: number;
+  protocolTreasuryId: string;
+  stakeEscrowId: string;
+  assetId: string;
+  unit: string;
+}
+
+export interface PactMissionsOptions {
+  settlementRecordRepository?: SettlementRecordRepository;
+  challengeStakePolicy?: Partial<ChallengeStakePolicy>;
+}
+
+const BASIS_POINTS = 10_000;
+
+const defaultChallengeStakePolicy: ChallengeStakePolicy = {
+  minimumStakeCents: 500,
+  penaltyBps: 2_000,
+  juryShareBps: 7_000,
+  protocolTreasuryId: "protocol:treasury",
+  stakeEscrowId: "challenge:escrow",
+  assetId: "USDC",
+  unit: "USDC_CENTS",
+};
+
 export class PactMissions {
   private readonly stateMachine = new MissionStateMachine();
+  private readonly settlementRecordRepository?: SettlementRecordRepository;
+  private readonly challengeStakePolicy: ChallengeStakePolicy;
 
   constructor(
     private readonly missionRepository: MissionRepository,
@@ -75,7 +124,11 @@ export class PactMissions {
     private readonly mailbox: AgentMailbox,
     private readonly eventBus: EventBus,
     private readonly capabilityPolicy: CapabilityPolicyEngine = new CapabilityPolicyEngine(),
-  ) {}
+    options: PactMissionsOptions = {},
+  ) {
+    this.settlementRecordRepository = options.settlementRecordRepository;
+    this.challengeStakePolicy = this.resolveChallengeStakePolicy(options.challengeStakePolicy);
+  }
 
   async createMission(input: CreateMissionInput): Promise<MissionEnvelope> {
     const issuer = await this.participantRepository.getById(input.issuerId);
@@ -298,11 +351,16 @@ export class PactMissions {
     const hasReject = verdicts.some((entry) => !entry.approve);
 
     if (hasApprove && hasReject) {
-      const challenge = this.openChallenge(
+      const challenge = await this.openChallengeWithStake({
         mission,
-        "verdict_disagreement",
-        verdicts.map((entry) => entry.id),
-      );
+        reason: "verdict_disagreement",
+        triggeredByVerdictIds: verdicts.map((entry) => entry.id),
+        challengerId: input.reviewerId,
+        counterpartyId:
+          input.challengeCounterpartyId ??
+          this.resolveDisagreementCounterpartyId(verdicts, verdict, mission.issuerId),
+        stakeAmountCents: input.challengeStakeCents ?? this.challengeStakePolicy.minimumStakeCents,
+      });
 
       const updated: MissionEnvelope = {
         ...this.stateMachine.transition(mission, "UnderReview"),
@@ -340,7 +398,15 @@ export class PactMissions {
     }
 
     if (input.confidence < this.capabilityPolicy.getEscalationThresholdScore()) {
-      const challenge = this.openChallenge(mission, "low_confidence", [verdict.id]);
+      const challenge = await this.openChallengeWithStake({
+        mission,
+        reason: "low_confidence",
+        triggeredByVerdictIds: [verdict.id],
+        challengerId: input.reviewerId,
+        counterpartyId: input.challengeCounterpartyId ?? mission.issuerId,
+        stakeAmountCents: input.challengeStakeCents ?? this.challengeStakePolicy.minimumStakeCents,
+      });
+
       const updated: MissionEnvelope = {
         ...this.stateMachine.transition(mission, "UnderReview"),
         verdicts,
@@ -384,6 +450,61 @@ export class PactMissions {
     });
 
     return verdict;
+  }
+
+  async openMissionChallenge(input: OpenMissionChallengeInput): Promise<MissionEnvelope> {
+    const mission = await this.getMissionOrThrow(input.missionId);
+    if (mission.status === "Settled" || mission.status === "Cancelled") {
+      throw new Error(`Mission ${mission.id} is terminal: ${mission.status}`);
+    }
+
+    await this.getParticipantOrThrow(input.challengerId);
+    await this.getParticipantOrThrow(input.counterpartyId);
+
+    const challenge = await this.openChallengeWithStake({
+      mission,
+      reason: input.reason,
+      triggeredByVerdictIds: input.triggeredByVerdictIds ?? [],
+      challengerId: input.challengerId,
+      counterpartyId: input.counterpartyId,
+      stakeAmountCents: input.stakeAmountCents ?? this.challengeStakePolicy.minimumStakeCents,
+    });
+
+    const updated: MissionEnvelope = {
+      ...this.stateMachine.transition(mission, "UnderReview"),
+      challenges: [...mission.challenges, challenge],
+      escalationCount: mission.escalationCount + 1,
+      updatedAt: Date.now(),
+    };
+
+    await this.missionRepository.save(updated);
+
+    await this.eventBus.publish({
+      name: DomainEvents.MissionChallengeOpened,
+      payload: {
+        missionId: mission.id,
+        challengeId: challenge.id,
+        challengerId: challenge.challengerId,
+        counterpartyId: challenge.counterpartyId,
+        reason: challenge.reason,
+        triggeredByVerdictIds: challenge.triggeredByVerdictIds,
+        stakeAmountCents: challenge.stake.amountCents,
+        notes: input.notes,
+      },
+      createdAt: Date.now(),
+    });
+
+    await this.eventBus.publish({
+      name: DomainEvents.MissionEscalated,
+      payload: {
+        missionId: mission.id,
+        challengeId: challenge.id,
+        reason: challenge.reason,
+      },
+      createdAt: Date.now(),
+    });
+
+    return updated;
   }
 
   async retryMission(missionId: string, reason = "automatic_retry"): Promise<MissionEnvelope> {
@@ -442,12 +563,18 @@ export class PactMissions {
       throw new Error(`Challenge ${input.challengeId} is already resolved`);
     }
 
+    const resolvedAt = Date.now();
+    const resolvedStake = input.approve
+      ? await this.resolveUpheldChallengeStake(challenge, resolvedAt)
+      : await this.resolveRejectedChallengeStake(challenge, input.resolverId, resolvedAt);
+
     const resolvedChallenge: MissionChallenge = {
       ...challenge,
       status: "resolved",
-      resolvedAt: Date.now(),
+      resolvedAt,
       resolution: input.approve ? "approved" : "rejected",
       resolutionNotes: input.notes,
+      stake: resolvedStake,
     };
 
     const updatedChallenges = mission.challenges.map((entry) =>
@@ -470,6 +597,7 @@ export class PactMissions {
         challengeId: resolvedChallenge.id,
         resolverId: input.resolverId,
         resolution: resolvedChallenge.resolution,
+        stakeStatus: resolvedChallenge.stake.status,
       },
       createdAt: Date.now(),
     });
@@ -507,19 +635,248 @@ export class PactMissions {
     return mission;
   }
 
-  private openChallenge(
-    mission: MissionEnvelope,
-    reason: MissionChallenge["reason"],
-    triggeredByVerdictIds: string[],
-  ): MissionChallenge {
-    return {
-      id: generateId("challenge"),
-      missionId: mission.id,
-      reason,
+  private async getParticipantOrThrow(participantId: string): Promise<void> {
+    const participant = await this.participantRepository.getById(participantId);
+    if (!participant) {
+      throw new NotFoundError("Participant", participantId);
+    }
+  }
+
+  private async openChallengeWithStake(input: {
+    mission: MissionEnvelope;
+    reason: MissionChallenge["reason"];
+    triggeredByVerdictIds: string[];
+    challengerId: string;
+    counterpartyId: string;
+    stakeAmountCents: number;
+  }): Promise<MissionChallenge> {
+    if (input.challengerId === input.counterpartyId) {
+      throw new Error("challenge counterparty must be different from challenger");
+    }
+
+    await this.getParticipantOrThrow(input.challengerId);
+    await this.getParticipantOrThrow(input.counterpartyId);
+
+    const openedAt = Date.now();
+    const challengeId = generateId("challenge");
+    const stake = postChallengeStake({
+      challengeId,
+      challengerId: input.challengerId,
+      amountCents: input.stakeAmountCents,
+      minimumAmountCents: this.challengeStakePolicy.minimumStakeCents,
+      assetId: this.challengeStakePolicy.assetId,
+      unit: this.challengeStakePolicy.unit,
+      postedAt: openedAt,
+    });
+
+    const challenge: MissionChallenge = {
+      id: challengeId,
+      missionId: input.mission.id,
+      challengerId: input.challengerId,
+      counterpartyId: input.counterpartyId,
+      reason: input.reason,
+      stake,
       status: "open",
-      triggeredByVerdictIds,
-      openedAt: Date.now(),
+      triggeredByVerdictIds: input.triggeredByVerdictIds,
+      openedAt,
     };
+
+    await this.appendChallengeSettlementRecord({
+      challenge,
+      legId: "challenge-stake-posted",
+      eventType: "stake_posted",
+      payerId: input.challengerId,
+      payeeId: this.challengeStakePolicy.stakeEscrowId,
+      amountCents: stake.amountCents,
+      occurredAt: openedAt,
+      metadata: {
+        reason: challenge.reason,
+      },
+    });
+
+    return challenge;
+  }
+
+  private async resolveUpheldChallengeStake(
+    challenge: MissionChallenge,
+    resolvedAt: number,
+  ): Promise<MissionChallenge["stake"]> {
+    const penaltyAmountCents = challenge.counterpartyId === challenge.challengerId
+      ? 0
+      : calculateChallengePenalty(challenge.stake.amountCents, this.challengeStakePolicy.penaltyBps);
+
+    const stake = settleChallengeStakeUpheld(challenge.stake, {
+      resolvedAt,
+      penalty: {
+        payerId: challenge.counterpartyId,
+        payeeId: challenge.challengerId,
+        amountCents: penaltyAmountCents,
+      },
+    });
+
+    await this.appendChallengeSettlementRecord({
+      challenge,
+      legId: "challenge-stake-return",
+      eventType: "stake_returned",
+      payerId: this.challengeStakePolicy.stakeEscrowId,
+      payeeId: challenge.challengerId,
+      amountCents: challenge.stake.amountCents,
+      occurredAt: resolvedAt,
+    });
+
+    if (penaltyAmountCents > 0) {
+      await this.appendChallengeSettlementRecord({
+        challenge,
+        legId: "challenge-upheld-penalty",
+        eventType: "upheld_penalty_paid",
+        payerId: challenge.counterpartyId,
+        payeeId: challenge.challengerId,
+        amountCents: penaltyAmountCents,
+        occurredAt: resolvedAt,
+      });
+    }
+
+    return stake;
+  }
+
+  private async resolveRejectedChallengeStake(
+    challenge: MissionChallenge,
+    resolverId: string,
+    resolvedAt: number,
+  ): Promise<MissionChallenge["stake"]> {
+    const split = splitForfeitedChallengeStake(
+      challenge.stake.amountCents,
+      this.challengeStakePolicy.juryShareBps,
+    );
+
+    const stake = settleChallengeStakeRejected(challenge.stake, {
+      resolvedAt,
+      juryRecipientId: resolverId,
+      protocolRecipientId: this.challengeStakePolicy.protocolTreasuryId,
+      juryAmountCents: split.juryAmountCents,
+      protocolAmountCents: split.protocolAmountCents,
+    });
+
+    if (split.juryAmountCents > 0) {
+      await this.appendChallengeSettlementRecord({
+        challenge,
+        legId: "challenge-stake-forfeit-jury",
+        eventType: "stake_forfeited_to_jury",
+        payerId: this.challengeStakePolicy.stakeEscrowId,
+        payeeId: resolverId,
+        amountCents: split.juryAmountCents,
+        occurredAt: resolvedAt,
+      });
+    }
+
+    if (split.protocolAmountCents > 0) {
+      await this.appendChallengeSettlementRecord({
+        challenge,
+        legId: "challenge-stake-forfeit-protocol",
+        eventType: "stake_forfeited_to_protocol",
+        payerId: this.challengeStakePolicy.stakeEscrowId,
+        payeeId: this.challengeStakePolicy.protocolTreasuryId,
+        amountCents: split.protocolAmountCents,
+        occurredAt: resolvedAt,
+      });
+    }
+
+    return stake;
+  }
+
+  private async appendChallengeSettlementRecord(input: {
+    challenge: MissionChallenge;
+    legId: string;
+    eventType: string;
+    payerId: string;
+    payeeId: string;
+    amountCents: number;
+    occurredAt: number;
+    metadata?: Record<string, string>;
+  }): Promise<void> {
+    if (!this.settlementRecordRepository) {
+      return;
+    }
+
+    if (input.amountCents <= 0) {
+      return;
+    }
+
+    const record: SettlementRecord = {
+      id: generateId("settlement-record"),
+      settlementId: this.challengeSettlementId(input.challenge.id),
+      legId: input.legId,
+      assetId: this.challengeStakePolicy.assetId,
+      rail: "api_quota",
+      connector: "api_quota_allocation",
+      payerId: input.payerId,
+      payeeId: input.payeeId,
+      amount: input.amountCents,
+      unit: this.challengeStakePolicy.unit,
+      status: "applied",
+      externalReference: `mission_challenge:${input.challenge.id}:${input.legId}`,
+      connectorMetadata: {
+        module: "pact-missions",
+        category: "challenge_stake",
+        eventType: input.eventType,
+        challengeId: input.challenge.id,
+        missionId: input.challenge.missionId,
+        challengerId: input.challenge.challengerId,
+        counterpartyId: input.challenge.counterpartyId,
+        ...input.metadata,
+      },
+      createdAt: input.occurredAt,
+    };
+
+    await this.settlementRecordRepository.append(record);
+    await this.eventBus.publish({
+      name: DomainEvents.EconomicsSettlementRecordCreated,
+      payload: {
+        settlementId: record.settlementId,
+        record,
+      },
+      createdAt: Date.now(),
+    });
+  }
+
+  private challengeSettlementId(challengeId: string): string {
+    return `challenge-${challengeId}`;
+  }
+
+  private resolveDisagreementCounterpartyId(
+    verdicts: ValidationVerdict[],
+    challengerVerdict: ValidationVerdict,
+    fallbackParticipantId: string,
+  ): string {
+    const opposingVerdict = [...verdicts]
+      .reverse()
+      .find(
+        (verdict) =>
+          verdict.id !== challengerVerdict.id && verdict.approve !== challengerVerdict.approve,
+      );
+
+    return opposingVerdict?.reviewerId ?? fallbackParticipantId;
+  }
+
+  private resolveChallengeStakePolicy(
+    override: Partial<ChallengeStakePolicy> | undefined,
+  ): ChallengeStakePolicy {
+    const policy: ChallengeStakePolicy = {
+      ...defaultChallengeStakePolicy,
+      ...override,
+    };
+
+    if (!Number.isInteger(policy.minimumStakeCents) || policy.minimumStakeCents <= 0) {
+      throw new Error("challenge minimum stake must be a positive integer (cents)");
+    }
+    if (!Number.isInteger(policy.penaltyBps) || policy.penaltyBps < 0 || policy.penaltyBps > BASIS_POINTS) {
+      throw new Error("challenge penaltyBps must be an integer between 0 and 10000");
+    }
+    if (!Number.isInteger(policy.juryShareBps) || policy.juryShareBps < 0 || policy.juryShareBps > BASIS_POINTS) {
+      throw new Error("challenge juryShareBps must be an integer between 0 and 10000");
+    }
+
+    return policy;
   }
 
   private async publishVerdictAndChallengeEvents(
@@ -539,8 +896,11 @@ export class PactMissions {
       payload: {
         missionId,
         challengeId: challenge.id,
+        challengerId: challenge.challengerId,
+        counterpartyId: challenge.counterpartyId,
         reason: challenge.reason,
         triggeredByVerdictIds: challenge.triggeredByVerdictIds,
+        stakeAmountCents: challenge.stake.amountCents,
       },
       createdAt: Date.now(),
     });

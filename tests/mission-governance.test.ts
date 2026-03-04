@@ -99,7 +99,7 @@ describe("Mission governance and escalation", () => {
     expect(hasRetryMessage).toBeTrue();
   });
 
-  it("opens challenge on verdict disagreement and resolves through jury", async () => {
+  it("posts challenge stake and returns it with penalty when challenge is upheld", async () => {
     const container = await seedParticipants();
 
     const mission = await container.pactMissions.createMission({
@@ -133,7 +133,7 @@ describe("Mission governance and escalation", () => {
       missionId: mission.id,
       reviewerId: "validator-1",
       approve: true,
-      confidence: 0.5,
+      confidence: 0.6,
       notes: "needs human follow-up",
     });
 
@@ -141,16 +141,110 @@ describe("Mission governance and escalation", () => {
       missionId: mission.id,
       reviewerId: "validator-2",
       approve: false,
-      confidence: 0.8,
+      confidence: 0.9,
       notes: "model drift suspected",
+      challengeStakeCents: 1_200,
     });
 
     const underReview = await container.pactMissions.getMission(mission.id);
-    expect(underReview.status).toBe("UnderReview");
-    expect(underReview.challenges.length).toBeGreaterThan(0);
-    expect(underReview.escalationCount).toBeGreaterThan(0);
+    const openChallenge = underReview.challenges.find(
+      (challenge) => challenge.status === "open" && challenge.challengerId === "validator-2",
+    );
+    expect(openChallenge).toBeDefined();
 
-    const openChallenge = underReview.challenges.find((challenge) => challenge.status === "open");
+    if (!openChallenge) {
+      throw new Error("Expected open challenge");
+    }
+
+    expect(openChallenge.stake.amountCents).toBe(1_200);
+    expect(openChallenge.stake.status).toBe("posted");
+
+    const beforeRecords = await container.pactEconomics.listSettlementRecords({
+      settlementId: `challenge-${openChallenge.id}`,
+    });
+    expect(beforeRecords.length).toBe(1);
+    expect(beforeRecords[0]?.legId).toBe("challenge-stake-posted");
+    expect(beforeRecords[0]?.payerId).toBe("validator-2");
+    expect(beforeRecords[0]?.payeeId).toBe("challenge:escrow");
+    expect(beforeRecords[0]?.amount).toBe(1_200);
+
+    const resolved = await container.pactMissions.resolveMissionChallenge({
+      missionId: mission.id,
+      challengeId: openChallenge.id,
+      resolverId: "jury-1",
+      approve: true,
+      notes: "jury accepted challenger evidence",
+    });
+
+    expect(resolved.status).toBe("Settled");
+    const resolvedChallenge = resolved.challenges.find((challenge) => challenge.id === openChallenge.id);
+    expect(resolvedChallenge?.stake.status).toBe("returned");
+    expect(resolvedChallenge?.stake.penalty?.payerId).toBe("validator-1");
+    expect(resolvedChallenge?.stake.penalty?.payeeId).toBe("validator-2");
+    expect(resolvedChallenge?.stake.penalty?.amountCents).toBe(240);
+
+    const afterRecords = await container.pactEconomics.listSettlementRecords({
+      settlementId: `challenge-${openChallenge.id}`,
+    });
+
+    expect(afterRecords.length).toBe(3);
+    const legIds = afterRecords.map((record) => record.legId);
+    expect(legIds).toContain("challenge-stake-posted");
+    expect(legIds).toContain("challenge-stake-return");
+    expect(legIds).toContain("challenge-upheld-penalty");
+  });
+
+  it("forfeits challenge stake and distributes to jury/protocol when challenge is rejected", async () => {
+    const container = await seedParticipants();
+
+    const mission = await container.pactMissions.createMission({
+      issuerId: "issuer-1",
+      title: "Reject frivolous challenge",
+      budgetCents: 12000,
+      targetAgentIds: ["agent-1"],
+      context: {
+        objective: "collect and classify shelf imagery",
+        constraints: ["no pii"],
+        successCriteria: ["consistency >= 90%"],
+      },
+    });
+
+    await container.pactMissions.claimMission(mission.id, "agent-1");
+    await container.pactMissions.appendExecutionStep({
+      missionId: mission.id,
+      agentId: "agent-1",
+      kind: "tool_call",
+      summary: "run classifier",
+    });
+    await container.pactMissions.submitEvidenceBundle({
+      missionId: mission.id,
+      agentId: "agent-1",
+      summary: "classified",
+      artifactUris: ["ipfs://bundle-c"],
+      bundleHash: "sha256:c",
+    });
+
+    await container.pactMissions.recordVerdict({
+      missionId: mission.id,
+      reviewerId: "validator-1",
+      approve: true,
+      confidence: 0.6,
+      notes: "uncertain",
+    });
+
+    await container.pactMissions.recordVerdict({
+      missionId: mission.id,
+      reviewerId: "validator-2",
+      approve: false,
+      confidence: 0.8,
+      notes: "disagree",
+      challengeStakeCents: 1_500,
+    });
+
+    const underReview = await container.pactMissions.getMission(mission.id);
+    const openChallenge = underReview.challenges.find(
+      (challenge) => challenge.status === "open" && challenge.challengerId === "validator-2",
+    );
     expect(openChallenge).toBeDefined();
 
     if (!openChallenge) {
@@ -161,13 +255,32 @@ describe("Mission governance and escalation", () => {
       missionId: mission.id,
       challengeId: openChallenge.id,
       resolverId: "jury-1",
-      approve: true,
-      notes: "jury accepted issuer evidence",
+      approve: false,
+      notes: "challenge was frivolous",
     });
 
-    expect(resolved.status).toBe("Settled");
+    expect(resolved.status).toBe("Failed");
     const resolvedChallenge = resolved.challenges.find((challenge) => challenge.id === openChallenge.id);
-    expect(resolvedChallenge?.status).toBe("resolved");
+    expect(resolvedChallenge?.stake.status).toBe("forfeited");
+    expect(resolvedChallenge?.stake.distribution?.juryRecipientId).toBe("jury-1");
+    expect(resolvedChallenge?.stake.distribution?.protocolRecipientId).toBe("protocol:treasury");
+    expect(resolvedChallenge?.stake.distribution?.juryAmountCents).toBe(1_050);
+    expect(resolvedChallenge?.stake.distribution?.protocolAmountCents).toBe(450);
+
+    const records = await container.pactEconomics.listSettlementRecords({
+      settlementId: `challenge-${openChallenge.id}`,
+    });
+
+    expect(records.length).toBe(3);
+    const forfeitureToJury = records.find((record) => record.legId === "challenge-stake-forfeit-jury");
+    const forfeitureToProtocol = records.find(
+      (record) => record.legId === "challenge-stake-forfeit-protocol",
+    );
+
+    expect(forfeitureToJury?.payeeId).toBe("jury-1");
+    expect(forfeitureToJury?.amount).toBe(1_050);
+    expect(forfeitureToProtocol?.payeeId).toBe("protocol:treasury");
+    expect(forfeitureToProtocol?.amount).toBe(450);
 
     const replay = await container.eventJournal.replay();
     const names = replay.map((record) => record.event.name);

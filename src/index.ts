@@ -2,6 +2,13 @@ export { createApp } from "./api/app";
 export { createContainer } from "./application/container";
 export { TaskStateMachine } from "./domain/task-state-machine";
 export { MissionStateMachine } from "./domain/mission-state-machine";
+export {
+  postChallengeStake,
+  settleChallengeStakeUpheld,
+  settleChallengeStakeRejected,
+  calculateChallengePenalty,
+  splitForfeitedChallengeStake,
+} from "./domain/challenge-stake";
 export { ThreeLayerValidationPipeline } from "./domain/validation-pipeline";
 export { ReputationModel } from "./domain/reputation";
 export { GaleShapleyMatcher } from "./domain/matching";
