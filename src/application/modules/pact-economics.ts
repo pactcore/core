@@ -5,6 +5,7 @@ import type {
   SettlementConnectors,
 } from "../settlement-connectors";
 import type {
+  ReconcileSettlementRecordInput,
   SettlementRecord,
   SettlementRecordPage,
   SettlementRecordPageRequest,
@@ -86,6 +87,10 @@ export type ListSettlementRecordsFilter = SettlementRecordQueryFilter;
 export type QuerySettlementRecordsInput = SettlementRecordQueryFilter & SettlementRecordPageRequest;
 export type ReplaySettlementRecordLifecycleInput = SettlementRecordReplayRequest;
 export { type SettlementRecord } from "../settlement-records";
+
+export interface ReconcileSettlementRecordRequest extends ReconcileSettlementRecordInput {
+  recordId: string;
+}
 
 interface ValuationRecord {
   assetId: string;
@@ -367,6 +372,18 @@ export class PactEconomics {
     return this.settlementRecordRepository.replay(input);
   }
 
+  async reconcileSettlementRecord(
+    input: ReconcileSettlementRecordRequest,
+  ): Promise<SettlementRecord> {
+    const reconciled = await this.settlementRecordRepository.reconcile(input.recordId, {
+      reconciledBy: input.reconciledBy,
+      note: input.note,
+      reconciledAt: input.reconciledAt,
+    });
+    await this.publishSettlementRecordReconciled(reconciled.settlementId, reconciled);
+    return reconciled;
+  }
+
   async getSettlementRecord(recordId: string): Promise<SettlementRecord | undefined> {
     return this.settlementRecordRepository.getById(recordId);
   }
@@ -455,6 +472,24 @@ export class PactEconomics {
         settlementId,
         recordCount,
         executedAt,
+      },
+      createdAt: Date.now(),
+    });
+  }
+
+  private async publishSettlementRecordReconciled(
+    settlementId: string,
+    record: SettlementRecord,
+  ): Promise<void> {
+    if (!this.eventBus) {
+      return;
+    }
+
+    await this.eventBus.publish({
+      name: DomainEvents.EconomicsSettlementRecordReconciled,
+      payload: {
+        settlementId,
+        record,
       },
       createdAt: Date.now(),
     });

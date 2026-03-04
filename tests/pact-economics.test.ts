@@ -172,11 +172,24 @@ describe("PactEconomics", () => {
     const single = await economics.getSettlementRecord(listed[0]!.id);
     expect(single?.settlementId).toBe("settlement-stage2");
 
+    const reconciled = await economics.reconcileSettlementRecord({
+      recordId: listed[0]!.id,
+      reconciledBy: "auditor-1",
+      note: "connector state verified",
+    });
+    expect(reconciled.status).toBe("reconciled");
+    expect(reconciled.reconciledBy).toBe("auditor-1");
+
+    const replay = await economics.replaySettlementRecordLifecycle({ fromOffset: 0, limit: 20 });
+    expect(replay.entries.length).toBe(4);
+    expect(replay.entries.some((entry) => entry.action === "reconciled")).toBeTrue();
+
     const events = await journal.replay(0, 20);
     const eventNames = events.map((entry) => entry.event.name);
     expect(
       eventNames.filter((name) => name === DomainEvents.EconomicsSettlementRecordCreated).length,
     ).toBe(3);
+    expect(eventNames.includes(DomainEvents.EconomicsSettlementRecordReconciled)).toBeTrue();
     expect(eventNames.includes(DomainEvents.EconomicsSettlementExecuted)).toBeTrue();
   });
 });

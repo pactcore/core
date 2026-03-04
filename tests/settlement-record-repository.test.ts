@@ -56,6 +56,7 @@ describe("InMemoryDurableSettlementRecordRepository", () => {
 
     await repository.append(buildRecord(1));
     await repository.append(buildRecord(2));
+    await repository.reconcile("record-1", { reconciledBy: "auditor-1" });
 
     const replayPage = await repository.replay({ fromOffset: 0, limit: 1 });
     expect(replayPage.entries.length).toBe(1);
@@ -66,8 +67,9 @@ describe("InMemoryDurableSettlementRecordRepository", () => {
       fromOffset: replayPage.nextOffset,
       limit: 5,
     });
-    expect(nextReplayPage.entries.length).toBe(1);
+    expect(nextReplayPage.entries.length).toBe(2);
     expect(nextReplayPage.entries[0]?.offset).toBe(1);
+    expect(nextReplayPage.entries[1]?.action).toBe("reconciled");
     expect(nextReplayPage.nextOffset).toBeUndefined();
   });
 });

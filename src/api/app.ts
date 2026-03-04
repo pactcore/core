@@ -202,14 +202,48 @@ export function createApp(validationConfig?: ValidationConfig) {
   app.get("/economics/settlements/records", async (c) => {
     const railValue = c.req.query("rail");
     const rail = isSettlementRail(railValue) ? railValue : undefined;
+    const statusValue = c.req.query("status");
+    const status = isSettlementRecordStatus(statusValue) ? statusValue : undefined;
     const records = await container.pactEconomics.listSettlementRecords({
       settlementId: c.req.query("settlementId"),
       assetId: c.req.query("assetId"),
       rail,
       payerId: c.req.query("payerId"),
       payeeId: c.req.query("payeeId"),
+      status,
+      reconciledBy: c.req.query("reconciledBy"),
     });
     return c.json(records);
+  });
+
+  app.get("/economics/settlements/records/page", async (c) => {
+    const railValue = c.req.query("rail");
+    const rail = isSettlementRail(railValue) ? railValue : undefined;
+    const statusValue = c.req.query("status");
+    const status = isSettlementRecordStatus(statusValue) ? statusValue : undefined;
+    const limitValue = c.req.query("limit");
+    const page = await container.pactEconomics.querySettlementRecords({
+      settlementId: c.req.query("settlementId"),
+      assetId: c.req.query("assetId"),
+      rail,
+      payerId: c.req.query("payerId"),
+      payeeId: c.req.query("payeeId"),
+      status,
+      reconciledBy: c.req.query("reconciledBy"),
+      cursor: c.req.query("cursor"),
+      limit: limitValue ? Number(limitValue) : undefined,
+    });
+    return c.json(page);
+  });
+
+  app.get("/economics/settlements/records/replay", async (c) => {
+    const fromOffsetValue = c.req.query("fromOffset");
+    const limitValue = c.req.query("limit");
+    const replay = await container.pactEconomics.replaySettlementRecordLifecycle({
+      fromOffset: fromOffsetValue ? Number(fromOffsetValue) : undefined,
+      limit: limitValue ? Number(limitValue) : undefined,
+    });
+    return c.json(replay);
   });
 
   app.get("/economics/settlements/records/:id", async (c) => {
@@ -217,6 +251,17 @@ export function createApp(validationConfig?: ValidationConfig) {
     if (!record) {
       throw new HTTPException(404, { message: "Settlement record not found" });
     }
+    return c.json(record);
+  });
+
+  app.post("/economics/settlements/records/:id/reconcile", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const record = await container.pactEconomics.reconcileSettlementRecord({
+      recordId: c.req.param("id"),
+      reconciledBy: body.reconciledBy ? String(body.reconciledBy) : undefined,
+      note: body.note ? String(body.note) : undefined,
+      reconciledAt: typeof body.reconciledAt === "number" ? body.reconciledAt : undefined,
+    });
     return c.json(record);
   });
 
@@ -251,4 +296,8 @@ function isSettlementRail(
   value?: string,
 ): value is "llm_metering" | "cloud_billing" | "api_quota" {
   return value === "llm_metering" || value === "cloud_billing" || value === "api_quota";
+}
+
+function isSettlementRecordStatus(value?: string): value is "applied" | "reconciled" {
+  return value === "applied" || value === "reconciled";
 }

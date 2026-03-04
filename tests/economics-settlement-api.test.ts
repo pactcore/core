@@ -92,5 +92,52 @@ describe("Economics settlement API", () => {
     const record = (await getResponse.json()) as { id: string; settlementId: string };
     expect(record.id).toBe(recordId);
     expect(record.settlementId).toBe("settlement-api-1");
+
+    const pageResponse = await app.request(
+      "/economics/settlements/records/page?settlementId=settlement-api-1&limit=2",
+    );
+    expect(pageResponse.status).toBe(200);
+    const page = (await pageResponse.json()) as {
+      items: Array<{ id: string; status: string }>;
+      nextCursor?: string;
+    };
+    expect(page.items.length).toBe(2);
+    expect(page.nextCursor).toBeDefined();
+
+    const reconcileResponse = await app.request(`/economics/settlements/records/${recordId}/reconcile`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        reconciledBy: "auditor-1",
+        note: "connector ledger matched",
+      }),
+    });
+    expect(reconcileResponse.status).toBe(200);
+    const reconciled = (await reconcileResponse.json()) as {
+      id: string;
+      status: string;
+      reconciledBy?: string;
+    };
+    expect(reconciled.id).toBe(recordId);
+    expect(reconciled.status).toBe("reconciled");
+    expect(reconciled.reconciledBy).toBe("auditor-1");
+
+    const reconciledFilterResponse = await app.request(
+      "/economics/settlements/records?settlementId=settlement-api-1&status=reconciled",
+    );
+    expect(reconciledFilterResponse.status).toBe(200);
+    const reconciledRecords = (await reconciledFilterResponse.json()) as Array<{ id: string }>;
+    expect(reconciledRecords.length).toBe(1);
+    expect(reconciledRecords[0]?.id).toBe(recordId);
+
+    const replayResponse = await app.request("/economics/settlements/records/replay?fromOffset=0&limit=20");
+    expect(replayResponse.status).toBe(200);
+    const replay = (await replayResponse.json()) as {
+      entries: Array<{ action: string; recordId: string }>;
+    };
+    expect(replay.entries.some((entry) => entry.action === "created")).toBeTrue();
+    expect(
+      replay.entries.some((entry) => entry.action === "reconciled" && entry.recordId === recordId),
+    ).toBeTrue();
   });
 });
