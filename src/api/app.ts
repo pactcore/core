@@ -10,6 +10,8 @@ import type { ReputationCategory } from "../domain/reputation-multi";
 import type { ValidationConfig } from "../domain/validation-pipeline";
 import type { TaskEvidence } from "../domain/types";
 import { InMemoryApiKeyStore } from "../infrastructure/api/in-memory-api-key-store";
+import { InMemoryMetricsRegistry } from "../observability/metrics";
+import { InMemoryTracer } from "../observability/tracing";
 import type {
   ZKCompletionClaim,
   ZKIdentityClaim,
@@ -28,9 +30,73 @@ export interface CreateAppOptions {
 export function createApp(validationConfig?: ValidationConfig, options: CreateAppOptions = {}) {
   const container = createContainer(validationConfig);
   const app = new Hono();
+  const observabilityStartedAt = Date.now();
+  const metricsRegistry = new InMemoryMetricsRegistry();
+  const tracer = new InMemoryTracer();
+  const requestCounter = metricsRegistry.counter(
+    "http_requests_total",
+    "Total HTTP requests by route, method, and status",
+  );
+  const requestErrorCounter = metricsRegistry.counter(
+    "http_request_errors_total",
+    "Total HTTP errors by route, method, and status",
+  );
+  const requestLatencyHistogram = metricsRegistry.histogram("http_request_latency_ms", {
+    description: "HTTP request latency in milliseconds by route, method, and status",
+    buckets: [1, 5, 10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000],
+  });
+  const inFlightGauge = metricsRegistry.gauge(
+    "http_requests_in_flight",
+    "Current in-flight HTTP requests",
+  );
   const apiKeyStore = new InMemoryApiKeyStore();
   const usageTracker = new UsageTracker();
   const shouldRequireApiKey = () => options.enforceApiKeyAuth === true || apiKeyStore.hasKeys();
+
+  app.use("*", async (c, next) => {
+    const startedAt = Date.now();
+    const span = tracer.startSpan("http.request", {
+      attributes: {
+        "http.method": c.req.method,
+        "http.target": c.req.path,
+      },
+    });
+    inFlightGauge.inc();
+
+    let requestError: unknown;
+    try {
+      await next();
+    } catch (error) {
+      requestError = error;
+      span.recordError(error);
+      throw error;
+    } finally {
+      const statusCode = resolveStatusCode(c.res.status, requestError);
+      const route = resolveRoutePath(c.req.routePath, c.req.path);
+      const labels = {
+        method: c.req.method,
+        route,
+        status: String(statusCode),
+      };
+      const latencyMs = Math.max(0, Date.now() - startedAt);
+
+      requestCounter.inc(labels);
+      requestLatencyHistogram.observe(latencyMs, labels);
+      if (statusCode >= 400 || requestError) {
+        requestErrorCounter.inc(labels);
+      }
+
+      inFlightGauge.dec();
+      span.setAttributes({
+        "http.route": route,
+        "http.status_code": statusCode,
+        "http.latency_ms": latencyMs,
+      });
+      span.end({
+        status: statusCode >= 400 ? "error" : "ok",
+      });
+    }
+  });
 
   app.use(
     "*",
@@ -46,7 +112,7 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
   });
 
   app.use("*", async (c, next) => {
-    if (c.req.path === "/health") {
+    if (c.req.path === "/health" || c.req.path.startsWith("/observability/")) {
       return next();
     }
 
@@ -58,6 +124,36 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
   });
 
   app.get("/health", (c) => c.json({ ok: true, service: "pact-network-core-bun" }));
+
+  app.get("/observability/health", (c) => {
+    const snapshot = metricsRegistry.snapshot();
+    return c.json({
+      ok: true,
+      service: "pact-network-core-bun",
+      uptimeMs: Math.max(0, Date.now() - observabilityStartedAt),
+      metricFamilies: {
+        counters: snapshot.counters.length,
+        gauges: snapshot.gauges.length,
+        histograms: snapshot.histograms.length,
+      },
+      traces: {
+        stored: tracer.size(),
+      },
+      timestamp: Date.now(),
+    });
+  });
+
+  app.get("/observability/metrics", (c) => {
+    return c.json(metricsRegistry.snapshot());
+  });
+
+  app.get("/observability/traces", (c) => {
+    const limit = normalizeLimitValue(c.req.query("limit"), 50, 500);
+    return c.json({
+      limit,
+      traces: tracer.getTraces(limit),
+    });
+  });
 
   app.post("/admin/api-keys", async (c) => {
     const body = await c.req.json().catch(() => ({}));
@@ -180,6 +276,26 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
   app.get("/id/did/:participantId", async (c) => {
     const didDocument = await container.pactID.getDIDDocument(c.req.param("participantId"));
     return c.json(didDocument);
+  });
+
+  app.get("/id/onchain/:participantId", async (c) => {
+    const participantId = c.req.param("participantId");
+    try {
+      const identity = await container.pactID.getOnchainIdentity(participantId);
+      return c.json(identity ?? null);
+    } catch (error) {
+      rethrowParticipantNotFound(error);
+    }
+  });
+
+  app.post("/id/onchain/:participantId/sync", async (c) => {
+    const participantId = c.req.param("participantId");
+    try {
+      const identity = await container.pactID.syncOnchainIdentity(participantId);
+      return c.json(identity ?? null);
+    } catch (error) {
+      rethrowParticipantNotFound(error);
+    }
   });
 
   app.get("/id/participants/:id/level", async (c) => {
@@ -794,6 +910,49 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(record);
   });
 
+  app.post("/dev/plugins/publish", async (c) => {
+    const body = await c.req.json();
+    const plugin = await container.pactPluginMarketplace.publishPlugin({
+      developerId: String(body.developerId),
+      name: String(body.name),
+      version: String(body.version),
+      description: String(body.description),
+      repositoryUrl: body.repositoryUrl ? String(body.repositoryUrl) : String(body.repoUrl),
+      priceCents:
+        typeof body.priceCents === "number" ? body.priceCents : Number(body.priceCents),
+    });
+    return c.json(plugin, 201);
+  });
+
+  app.get("/dev/plugins", async (c) => {
+    return c.json(await container.pactPluginMarketplace.listPlugins());
+  });
+
+  app.post("/dev/plugins/:id/install", async (c) => {
+    const body = await c.req.json();
+    const install = await container.pactPluginMarketplace.installPlugin(
+      c.req.param("id"),
+      body.installerId ? String(body.installerId) : "",
+    );
+    return c.json(install, 201);
+  });
+
+  app.post("/dev/plugins/:id/revenue", async (c) => {
+    const body = await c.req.json();
+    const revenue = await container.pactPluginMarketplace.recordPluginRevenue(
+      c.req.param("id"),
+      typeof body.revenueCents === "number" ? body.revenueCents : Number(body.revenueCents),
+    );
+    return c.json(revenue, 201);
+  });
+
+  app.get("/dev/plugins/payouts/:developerId", async (c) => {
+    const payouts = await container.pactPluginMarketplace.getDeveloperPayouts(
+      c.req.param("developerId"),
+    );
+    return c.json(payouts);
+  });
+
   app.get("/dev/integrations", async (c) => {
     return c.json(await container.pactDev.list());
   });
@@ -881,6 +1040,36 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
   });
 
   return app;
+}
+
+function resolveStatusCode(defaultStatusCode: number, error: unknown): number {
+  if (error instanceof HTTPException) {
+    return error.status;
+  }
+  if (error) {
+    return 500;
+  }
+  return defaultStatusCode;
+}
+
+function resolveRoutePath(routePath: string | undefined, requestPath: string): string {
+  if (routePath && routePath !== "*" && routePath !== "/*") {
+    return routePath;
+  }
+  return requestPath;
+}
+
+function normalizeLimitValue(value: string | undefined, fallback: number, max: number): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.floor(parsed));
 }
 
 function isSettlementRail(

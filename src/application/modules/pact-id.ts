@@ -2,6 +2,8 @@ import type {
   CredentialIssuer,
   CredentialRepository,
   DIDRepository,
+  IdentitySBTContractClient,
+  OnchainIdentityRecord,
   ParticipantRepository,
   ParticipantStatsRepository,
   ReputationService,
@@ -29,6 +31,14 @@ export interface RegisterParticipantInput {
   initialReputation?: number;
 }
 
+export interface OnchainParticipantIdentity {
+  participantId: string;
+  tokenId: string;
+  role: string;
+  level: number;
+  registeredAt: number;
+}
+
 const defaultLocation: GeoPoint = {
   latitude: 0,
   longitude: 0,
@@ -42,6 +52,8 @@ export class ParticipantNotFoundError extends Error {
 }
 
 export class PactID {
+  private readonly onchainTokenIdsByParticipant = new Map<string, bigint>();
+
   constructor(
     private readonly participantRepository: ParticipantRepository,
     private readonly workerRepository: WorkerRepository,
@@ -50,6 +62,7 @@ export class PactID {
     private readonly credentialIssuer: CredentialIssuer,
     private readonly credentialRepository: CredentialRepository,
     private readonly participantStatsRepository?: ParticipantStatsRepository,
+    private readonly identitySbtClient?: IdentitySBTContractClient,
   ) {}
 
   // ── Participant registration (with DID) ────────────────────
@@ -114,6 +127,8 @@ export class PactID {
       await this.workerRepository.save(worker);
     }
 
+    await this.mintOnchainIdentityIfEnabled(participant);
+
     return participant;
   }
 
@@ -148,8 +163,54 @@ export class PactID {
       hasIdVerification: stats.hasIdVerification,
     });
     const updatedParticipant = await this.saveParticipantAndStats(participant, stats, newLevel);
+    await this.upgradeOnchainIdentityIfEnabled(updatedParticipant.id, newLevel);
 
     return { previousLevel, newLevel, participant: updatedParticipant };
+  }
+
+  async getOnchainIdentity(participantId: string): Promise<OnchainParticipantIdentity | undefined> {
+    await this.requireParticipant(participantId);
+
+    if (!this.identitySbtClient) {
+      return undefined;
+    }
+
+    const tokenId = this.onchainTokenIdsByParticipant.get(participantId);
+    if (tokenId === undefined) {
+      return undefined;
+    }
+
+    const identity = await this.identitySbtClient.getIdentity(tokenId);
+    if (!identity) {
+      return undefined;
+    }
+
+    return this.buildOnchainIdentity(participantId, tokenId, identity);
+  }
+
+  async syncOnchainIdentity(participantId: string): Promise<OnchainParticipantIdentity | undefined> {
+    const participant = await this.requireParticipant(participantId);
+
+    if (!this.identitySbtClient) {
+      return undefined;
+    }
+
+    const localLevel = participant.identityLevel ?? "basic";
+    const existingTokenId = this.onchainTokenIdsByParticipant.get(participantId);
+
+    if (existingTokenId === undefined) {
+      const mintedTokenId = await this.identitySbtClient.mint(
+        participant.id,
+        participant.id,
+        participant.role,
+        identityLevelToChainLevel(localLevel),
+      );
+      this.onchainTokenIdsByParticipant.set(participantId, mintedTokenId);
+    } else {
+      await this.identitySbtClient.upgradeLevel(existingTokenId, identityLevelToChainLevel(localLevel));
+    }
+
+    return this.getOnchainIdentity(participantId);
   }
 
   async getParticipantStats(participantId: string): Promise<ParticipantStats | undefined> {
@@ -305,5 +366,59 @@ export class PactID {
       await this.participantStatsRepository.save(stats);
     }
     return updatedParticipant;
+  }
+
+  private async mintOnchainIdentityIfEnabled(participant: Participant): Promise<void> {
+    if (!this.identitySbtClient) {
+      return;
+    }
+    const tokenId = await this.identitySbtClient.mint(
+      participant.id,
+      participant.id,
+      participant.role,
+      identityLevelToChainLevel(participant.identityLevel ?? "basic"),
+    );
+    this.onchainTokenIdsByParticipant.set(participant.id, tokenId);
+  }
+
+  private async upgradeOnchainIdentityIfEnabled(
+    participantId: string,
+    identityLevel: IdentityLevel,
+  ): Promise<void> {
+    if (!this.identitySbtClient) {
+      return;
+    }
+    const tokenId = this.onchainTokenIdsByParticipant.get(participantId);
+    if (tokenId === undefined) {
+      return;
+    }
+    await this.identitySbtClient.upgradeLevel(tokenId, identityLevelToChainLevel(identityLevel));
+  }
+
+  private buildOnchainIdentity(
+    participantId: string,
+    tokenId: bigint,
+    onchainIdentity: OnchainIdentityRecord,
+  ): OnchainParticipantIdentity {
+    return {
+      participantId,
+      tokenId: tokenId.toString(),
+      role: String(onchainIdentity.role),
+      level: onchainIdentity.level,
+      registeredAt: onchainIdentity.registeredAt,
+    };
+  }
+}
+
+function identityLevelToChainLevel(level: IdentityLevel): number {
+  switch (level) {
+    case "basic":
+      return 0;
+    case "verified":
+      return 1;
+    case "trusted":
+      return 2;
+    case "elite":
+      return 3;
   }
 }

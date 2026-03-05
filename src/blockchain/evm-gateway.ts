@@ -1,4 +1,8 @@
-import type { BlockchainGateway } from "../application/contracts";
+import type {
+  BlockchainGateway,
+  IdentitySBTContractClient,
+  OnchainIdentityRecord,
+} from "../application/contracts";
 import type { EscrowAccount } from "./abstraction";
 import {
   decodeFunctionResult,
@@ -29,6 +33,13 @@ interface EscrowRecipients {
 export interface EvmBlockchainGatewayConfig {
   rpcUrl: string;
   contractAddresses: ContractAddresses;
+  signerPrivateKey?: string;
+  rpcProvider?: RpcProvider;
+}
+
+export interface EvmIdentitySBTContractClientConfig {
+  rpcUrl: string;
+  contractAddress: string;
   signerPrivateKey?: string;
   rpcProvider?: RpcProvider;
 }
@@ -157,10 +168,103 @@ export class EvmBlockchainGateway implements BlockchainGateway {
   }
 
   private taskIdToUint256(taskId: string): bigint {
-    if (/^\d+$/.test(taskId)) {
-      return BigInt(taskId);
+    return identifierToUint256(taskId);
+  }
+}
+
+export class EvmIdentitySBTContractClient implements IdentitySBTContractClient {
+  private readonly rpcProvider: RpcProvider;
+  private readonly signerAddress: string;
+  private txNonce = 0;
+
+  constructor(private readonly config: EvmIdentitySBTContractClientConfig) {
+    this.rpcProvider = config.rpcProvider ?? new FetchRpcProvider(config.rpcUrl);
+    this.signerAddress = config.signerPrivateKey
+      ? normalizeLikeAddress(config.signerPrivateKey)
+      : normalizeLikeAddress("pact-network-identity-signer");
+  }
+
+  async mint(
+    to: string,
+    participantId: string,
+    role: string,
+    level: number,
+  ): Promise<bigint> {
+    const encoded = encodeFunction(
+      "mint",
+      ["address", "uint256", "string", "uint256"],
+      [
+        normalizeLikeAddress(to),
+        identifierToUint256(participantId),
+        role,
+        BigInt(assertUint8(level, "mint level")),
+      ],
+    );
+    const selector = functionSelectorFromSignature("mint(address,uint256,string,uint8)");
+    const data = `0x${selector.slice(2)}${encoded.slice(10)}`;
+    await this.sendRawTransaction(this.config.contractAddress, data);
+    return identifierToUint256(participantId);
+  }
+
+  async upgradeLevel(tokenId: bigint, newLevel: number): Promise<string> {
+    const encoded = encodeFunction("upgradeLevel", ["uint256", "uint256"], [
+      tokenId,
+      BigInt(assertUint8(newLevel, "upgrade level")),
+    ]);
+    const selector = functionSelectorFromSignature("upgradeLevel(uint256,uint8)");
+    const data = `0x${selector.slice(2)}${encoded.slice(10)}`;
+    return this.sendRawTransaction(this.config.contractAddress, data);
+  }
+
+  async getIdentity(tokenId: bigint): Promise<OnchainIdentityRecord | undefined> {
+    const data = encodeFunction("getIdentity", ["uint256"], [tokenId]);
+    const callResult = await this.rpcProvider.request("eth_call", [
+      {
+        to: normalizeLikeAddress(this.config.contractAddress),
+        data,
+      },
+      "latest",
+    ]);
+
+    if (typeof callResult !== "string") {
+      throw new Error("eth_call returned a non-hex response");
     }
-    return BigInt(`0x${keccak256Hex(taskId)}`);
+
+    const [roleRaw, levelRaw, registeredAtRaw] = decodeFunctionResult(
+      ["string", "uint256", "uint256"],
+      callResult,
+    );
+    const role = String(roleRaw);
+    const level = toUint8(levelRaw, "onchain identity level");
+    const registeredAt = toSafeNumber(registeredAtRaw);
+
+    if (role.length === 0 && level === 0 && registeredAt === 0) {
+      return undefined;
+    }
+
+    return {
+      role,
+      level,
+      registeredAt,
+    };
+  }
+
+  private async sendRawTransaction(to: string, data: string): Promise<string> {
+    const payload: SerializedTxPayload = {
+      from: this.signerAddress,
+      to: normalizeLikeAddress(to),
+      data,
+      nonce: this.txNonce,
+    };
+    this.txNonce += 1;
+
+    const rawTx = hexEncodeUtf8(JSON.stringify(payload));
+    const result = await this.rpcProvider.request("eth_sendRawTransaction", [rawTx]);
+
+    if (typeof result === "string") {
+      return result;
+    }
+    return `0x${keccak256Hex(rawTx)}`;
   }
 }
 
@@ -237,4 +341,28 @@ function toSafeNumber(value: unknown): number {
     throw new Error(`Cannot represent uint256 as number safely: ${value}`);
   }
   return Number(value);
+}
+
+function toUint8(value: unknown, context: string): number {
+  if (typeof value !== "bigint") {
+    throw new Error(`Expected bigint for ${context}, received ${typeof value}`);
+  }
+  if (value < 0n || value > 255n) {
+    throw new Error(`${context} is out of uint8 range: ${value}`);
+  }
+  return Number(value);
+}
+
+function assertUint8(value: number, context: string): number {
+  if (!Number.isInteger(value) || value < 0 || value > 255) {
+    throw new Error(`${context} must be an integer in [0, 255]. Received: ${value}`);
+  }
+  return value;
+}
+
+function identifierToUint256(identifier: string): bigint {
+  if (/^\d+$/.test(identifier)) {
+    return BigInt(identifier);
+  }
+  return BigInt(`0x${keccak256Hex(identifier)}`);
 }

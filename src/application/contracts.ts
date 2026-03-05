@@ -1,6 +1,7 @@
 import type {
   MissionEnvelope,
   Participant,
+  ParticipantRole,
   ParticipantStats,
   ReputationRecord,
   Task,
@@ -297,6 +298,12 @@ import type {
   DataListing,
   DataPurchase,
 } from "../domain/data-marketplace";
+import type {
+  PluginInstall,
+  PluginListing,
+  PluginPackage,
+  RevenueShare,
+} from "../domain/plugin-marketplace";
 import type { DataAsset } from "../application/modules/pact-data";
 
 export interface ComputeProviderRegistry {
@@ -335,6 +342,18 @@ export interface CredentialRepository {
   getById(id: string): Promise<VerifiableCredential | undefined>;
   getBySubject(subjectId: string): Promise<VerifiableCredential[]>;
   getBySubjectAndCapability(subjectId: string, capability: string): Promise<VerifiableCredential[]>;
+}
+
+export interface OnchainIdentityRecord {
+  role: ParticipantRole | string;
+  level: number;
+  registeredAt: number;
+}
+
+export interface IdentitySBTContractClient {
+  mint(to: string, participantId: string, role: ParticipantRole | string, level: number): Promise<bigint>;
+  upgradeLevel(tokenId: bigint, newLevel: number): Promise<string>;
+  getIdentity(tokenId: bigint): Promise<OnchainIdentityRecord | undefined>;
 }
 
 // ── PactZK contracts ─────────────────────────────────────────
@@ -391,6 +410,33 @@ export interface DataPurchaseRepository {
   getById(id: string): Promise<DataPurchase | undefined>;
   listByBuyer(buyerId: string): Promise<DataPurchase[]>;
   listByAsset(assetId: string): Promise<DataPurchase[]>;
+}
+
+// ── PactDev Plugin Marketplace contracts ──────────────────────
+
+export interface PluginPackageRepository {
+  save(pkg: PluginPackage): Promise<void>;
+  getById(id: string): Promise<PluginPackage | undefined>;
+  listByDeveloper(developerId: string): Promise<PluginPackage[]>;
+}
+
+export interface PluginListingRepository {
+  save(listing: PluginListing): Promise<void>;
+  getById(id: string): Promise<PluginListing | undefined>;
+  listByDeveloper(developerId: string): Promise<PluginListing[]>;
+  listActive(): Promise<PluginListing[]>;
+}
+
+export interface PluginInstallRepository {
+  save(install: PluginInstall): Promise<void>;
+  listByPlugin(pluginId: string): Promise<PluginInstall[]>;
+  listByInstaller(installerId: string): Promise<PluginInstall[]>;
+}
+
+export interface PluginRevenueShareRepository {
+  save(revenueShare: RevenueShare): Promise<void>;
+  listByPlugin(pluginId: string): Promise<RevenueShare[]>;
+  listByDeveloper(developerId: string): Promise<RevenueShare[]>;
 }
 
 // ── PactDev contracts ──────────────────────────────────────────

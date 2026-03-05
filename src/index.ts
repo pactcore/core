@@ -16,7 +16,11 @@ export {
   keccak256Hex,
   type AbiType,
 } from "./blockchain/abi-encoder";
-export { EvmBlockchainGateway, MockRpcProvider } from "./blockchain/evm-gateway";
+export {
+  EvmBlockchainGateway,
+  EvmIdentitySBTContractClient,
+  MockRpcProvider,
+} from "./blockchain/evm-gateway";
 export { MockRpcProvider as InfrastructureMockRpcProvider } from "./infrastructure/blockchain/mock-rpc-provider";
 export { TaskStateMachine } from "./domain/task-state-machine";
 export { MissionStateMachine } from "./domain/mission-state-machine";
@@ -119,9 +123,12 @@ export type {
   MicropaymentAggregator,
   CreditLineManager,
   GasSponsorshipManager,
+  IdentitySBTContractClient,
+  OnchainIdentityRecord,
 } from "./application/contracts";
 export { InMemoryHeartbeatSupervisor } from "./infrastructure/heartbeat/in-memory-heartbeat-supervisor";
 export { FileBackedEventJournal } from "./infrastructure/event-bus/file-backed-event-journal";
+export { SQLiteEventJournal } from "./infrastructure/event-bus/sqlite-event-journal";
 export { InMemoryPaymentRouter } from "./infrastructure/payment/in-memory-payment-router";
 export { InMemoryMicropaymentAggregator } from "./infrastructure/payment/in-memory-micropayment-aggregator";
 export { InMemoryCreditLineManager } from "./infrastructure/payment/in-memory-credit-line-manager";
@@ -132,6 +139,9 @@ export { InMemoryApiQuotaAllocationConnector } from "./infrastructure/settlement
 export { InMemoryDurableSettlementRecordRepository } from "./infrastructure/repositories/in-memory-durable-settlement-record-repository";
 export { FileBackedDurableSettlementRecordRepository } from "./infrastructure/repositories/file-backed-durable-settlement-record-repository";
 export { FileBackedMissionRepository } from "./infrastructure/repositories/file-backed-mission-repository";
+export { SQLiteTaskRepository } from "./infrastructure/repositories/sqlite-task-repository";
+export { SQLiteParticipantRepository } from "./infrastructure/repositories/sqlite-participant-repository";
+export { SQLiteReputationRepository } from "./infrastructure/repositories/sqlite-reputation-repository";
 export { InMemoryReputationProfileRepository } from "./infrastructure/reputation/in-memory-reputation-profile-repository";
 export { InMemoryReputationEventRepository } from "./infrastructure/reputation/in-memory-reputation-event-repository";
 
@@ -177,11 +187,23 @@ export type {
 // PactDev / Governance infrastructure
 export { InMemoryPolicyRegistry } from "./infrastructure/governance/in-memory-policy-registry";
 export { InMemoryTemplateRepository } from "./infrastructure/governance/in-memory-template-repository";
+export { InMemoryPluginPackageRepository } from "./infrastructure/dev/in-memory-plugin-package-repository";
+export { InMemoryPluginListingRepository } from "./infrastructure/dev/in-memory-plugin-listing-repository";
+export { InMemoryPluginInstallRepository } from "./infrastructure/dev/in-memory-plugin-install-repository";
+export { InMemoryPluginRevenueShareRepository } from "./infrastructure/dev/in-memory-plugin-revenue-share-repository";
+export { calculateRevenueShare } from "./domain/plugin-marketplace";
+export type {
+  PluginPackage,
+  PluginListing,
+  PluginInstall,
+  RevenueShare,
+} from "./domain/plugin-marketplace";
 
 // Module exports
 export { PactCompute } from "./application/modules/pact-compute";
 export { PactData } from "./application/modules/pact-data";
 export { PactDev } from "./application/modules/pact-dev";
+export { PactPluginMarketplace } from "./application/modules/pact-plugin-marketplace";
 export { PactID } from "./application/modules/pact-id";
 export { PactTasks } from "./application/modules/pact-tasks";
 export { PactPay } from "./application/modules/pact-pay";

@@ -1,17 +1,22 @@
 import type { EventJournal } from "./contracts";
 import { recommendedValidationConfig, type ValidationConfig } from "../domain/validation-pipeline";
 import { TaskStateMachine } from "../domain/task-state-machine";
+import { EvmIdentitySBTContractClient } from "../blockchain/evm-gateway";
 import { InMemoryBaseChainGateway } from "../infrastructure/blockchain/in-memory-base-chain-gateway";
 import { InMemoryAgentMailbox } from "../infrastructure/agent/in-memory-agent-mailbox";
 import { FileBackedEventJournal } from "../infrastructure/event-bus/file-backed-event-journal";
 import { InMemoryEventBus } from "../infrastructure/event-bus/in-memory-event-bus";
 import { InMemoryEventJournal } from "../infrastructure/event-bus/in-memory-event-journal";
+import { SQLiteEventJournal } from "../infrastructure/event-bus/sqlite-event-journal";
 import { InMemoryX402PaymentAdapter } from "../infrastructure/payment/in-memory-x402-payment-adapter";
 import { InMemoryHeartbeatSupervisor } from "../infrastructure/heartbeat/in-memory-heartbeat-supervisor";
 import { FileBackedMissionRepository } from "../infrastructure/repositories/file-backed-mission-repository";
 import { InMemoryMissionRepository } from "../infrastructure/repositories/in-memory-mission-repository";
 import { InMemoryParticipantRepository } from "../infrastructure/repositories/in-memory-participant-repository";
 import { InMemoryReputationRepository } from "../infrastructure/repositories/in-memory-reputation-repository";
+import { SQLiteParticipantRepository } from "../infrastructure/repositories/sqlite-participant-repository";
+import { SQLiteReputationRepository } from "../infrastructure/repositories/sqlite-reputation-repository";
+import { SQLiteTaskRepository } from "../infrastructure/repositories/sqlite-task-repository";
 import { FileBackedDurableSettlementRecordRepository } from "../infrastructure/repositories/file-backed-durable-settlement-record-repository";
 import { InMemoryDurableSettlementRecordRepository } from "../infrastructure/repositories/in-memory-durable-settlement-record-repository";
 import { InMemoryTaskRepository } from "../infrastructure/repositories/in-memory-task-repository";
@@ -45,10 +50,15 @@ import { InMemoryDataListingRepository } from "../infrastructure/data/in-memory-
 import { InMemoryDataPurchaseRepository } from "../infrastructure/data/in-memory-data-purchase-repository";
 import { InMemoryPolicyRegistry } from "../infrastructure/governance/in-memory-policy-registry";
 import { InMemoryTemplateRepository } from "../infrastructure/governance/in-memory-template-repository";
+import { InMemoryPluginPackageRepository } from "../infrastructure/dev/in-memory-plugin-package-repository";
+import { InMemoryPluginListingRepository } from "../infrastructure/dev/in-memory-plugin-listing-repository";
+import { InMemoryPluginInstallRepository } from "../infrastructure/dev/in-memory-plugin-install-repository";
+import { InMemoryPluginRevenueShareRepository } from "../infrastructure/dev/in-memory-plugin-revenue-share-repository";
 import { PactOrchestrator } from "./orchestrator";
 import { PactCompute } from "./modules/pact-compute";
 import { PactData } from "./modules/pact-data";
 import { PactDev } from "./modules/pact-dev";
+import { PactPluginMarketplace } from "./modules/pact-plugin-marketplace";
 import { PactEconomics } from "./modules/pact-economics";
 import { PactHeartbeat } from "./modules/pact-heartbeat";
 import { PactID } from "./modules/pact-id";
@@ -67,6 +77,7 @@ export interface PactContainer {
   pactZK: PactZK;
   pactData: PactData;
   pactDev: PactDev;
+  pactPluginMarketplace: PactPluginMarketplace;
   pactMissions: PactMissions;
   pactHeartbeat: PactHeartbeat;
   pactEconomics: PactEconomics;
@@ -75,6 +86,7 @@ export interface PactContainer {
 }
 
 export interface PactContainerEnvironment {
+  PACT_DB_FILE?: string;
   PACT_MISSION_STORE_FILE?: string;
   PACT_SETTLEMENT_RECORD_STORE_FILE?: string;
   PACT_EVENT_JOURNAL_STORE_FILE?: string;
@@ -86,6 +98,9 @@ export interface PactContainerEnvironment {
   PACT_CHALLENGE_STAKE_ASSET_ID?: string;
   PACT_CHALLENGE_STAKE_UNIT?: string;
   PACT_ZK_SECRET?: string;
+  PACT_EVM_RPC_URL?: string;
+  PACT_IDENTITY_SBT_ADDRESS?: string;
+  PACT_EVM_PRIVATE_KEY?: string;
 }
 
 export interface CreateContainerOptions {
@@ -97,8 +112,11 @@ export function createContainer(
   options: CreateContainerOptions = {},
 ): PactContainer {
   const env = options.env ?? process.env;
+  const dbFile = env.PACT_DB_FILE;
 
-  const taskRepository = new InMemoryTaskRepository();
+  const taskRepository = dbFile
+    ? new SQLiteTaskRepository({ filePath: dbFile })
+    : new InMemoryTaskRepository();
   const missionStoreFile = env.PACT_MISSION_STORE_FILE;
   const missionRepository = missionStoreFile
     ? new FileBackedMissionRepository({
@@ -106,8 +124,12 @@ export function createContainer(
       })
     : new InMemoryMissionRepository();
   const workerRepository = new InMemoryWorkerRepository();
-  const participantRepository = new InMemoryParticipantRepository();
-  const reputationRepository = new InMemoryReputationRepository();
+  const participantRepository = dbFile
+    ? new SQLiteParticipantRepository({ filePath: dbFile })
+    : new InMemoryParticipantRepository();
+  const reputationRepository = dbFile
+    ? new SQLiteReputationRepository({ filePath: dbFile })
+    : new InMemoryReputationRepository();
   const settlementRecordStoreFile = env.PACT_SETTLEMENT_RECORD_STORE_FILE;
   const settlementRecordRepository = settlementRecordStoreFile
     ? new FileBackedDurableSettlementRecordRepository({
@@ -116,11 +138,15 @@ export function createContainer(
     : new InMemoryDurableSettlementRecordRepository();
 
   const eventJournalStoreFile = env.PACT_EVENT_JOURNAL_STORE_FILE;
-  const eventJournal = eventJournalStoreFile
-    ? new FileBackedEventJournal({
-        filePath: eventJournalStoreFile,
+  const eventJournal = dbFile
+    ? new SQLiteEventJournal({
+        filePath: dbFile,
       })
-    : new InMemoryEventJournal();
+    : eventJournalStoreFile
+      ? new FileBackedEventJournal({
+          filePath: eventJournalStoreFile,
+        })
+      : new InMemoryEventJournal();
   const eventBus = new InMemoryEventBus(eventJournal);
   const agentMailbox = new InMemoryAgentMailbox();
 
@@ -156,6 +182,18 @@ export function createContainer(
   const dataPurchaseRepository = new InMemoryDataPurchaseRepository();
   const policyRegistry = new InMemoryPolicyRegistry();
   const templateRepository = new InMemoryTemplateRepository();
+  const identitySbtClient =
+    env.PACT_EVM_RPC_URL && env.PACT_IDENTITY_SBT_ADDRESS
+      ? new EvmIdentitySBTContractClient({
+          rpcUrl: env.PACT_EVM_RPC_URL,
+          contractAddress: env.PACT_IDENTITY_SBT_ADDRESS,
+          signerPrivateKey: env.PACT_EVM_PRIVATE_KEY,
+        })
+      : undefined;
+  const pluginPackageRepository = new InMemoryPluginPackageRepository();
+  const pluginListingRepository = new InMemoryPluginListingRepository();
+  const pluginInstallRepository = new InMemoryPluginInstallRepository();
+  const pluginRevenueShareRepository = new InMemoryPluginRevenueShareRepository();
 
   const pactPay = new PactPay(blockchain, x402Adapter);
   const pactReputation = new PactReputation(reputationProfileRepository, reputationEventRepository);
@@ -167,6 +205,7 @@ export function createContainer(
     credentialIssuer,
     credentialRepository,
     participantStatsRepository,
+    identitySbtClient,
   );
   const pactTasks = new PactTasks(taskManager, workerRepository, eventBus, pactPay);
   const pactCompute = new PactCompute(
@@ -186,6 +225,12 @@ export function createContainer(
     dataPurchaseRepository,
   );
   const pactDev = new PactDev(policyRegistry, templateRepository);
+  const pactPluginMarketplace = new PactPluginMarketplace(
+    pluginPackageRepository,
+    pluginListingRepository,
+    pluginInstallRepository,
+    pluginRevenueShareRepository,
+  );
   const pactMissions = new PactMissions(
     missionRepository,
     participantRepository,
@@ -234,6 +279,7 @@ export function createContainer(
     pactZK,
     pactData,
     pactDev,
+    pactPluginMarketplace,
     pactMissions,
     pactHeartbeat,
     pactEconomics,
