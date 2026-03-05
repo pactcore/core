@@ -14,6 +14,8 @@ import type {
   ReputationEvent,
   ReputationProfile,
 } from "../domain/reputation-multi";
+import type { AntiSpamAction } from "../domain/anti-spam";
+import type { DisputeCase } from "../domain/dispute-resolution";
 import type { ValidationOutcome } from "../domain/validation-pipeline";
 import type { ZKProof, ZKProofRequest, ZKProofType } from "../domain/zk-proofs";
 import type { EscrowAccount } from "../blockchain/abstraction";
@@ -28,6 +30,29 @@ export interface TaskRepository {
   save(task: Task): Promise<void>;
   getById(id: string): Promise<Task | undefined>;
   list(): Promise<Task[]>;
+}
+
+export interface AntiSpamActionRecord {
+  participantId: string;
+  action: AntiSpamAction;
+  occurredAt: number;
+  stakeCents: number;
+}
+
+export interface AntiSpamParticipantState {
+  participantId: string;
+  firstSeenAt?: number;
+  totalStakeCents: number;
+  actions: AntiSpamActionRecord[];
+}
+
+export interface AntiSpamRateLimitStore {
+  getParticipantState(participantId: string): Promise<AntiSpamParticipantState>;
+  listParticipantActions(
+    participantId: string,
+    action?: AntiSpamAction,
+  ): Promise<AntiSpamActionRecord[]>;
+  recordAction(record: AntiSpamActionRecord): Promise<void>;
 }
 
 export interface MissionQueryFilter {
@@ -79,6 +104,12 @@ export interface MissionRepository {
   list(): Promise<MissionEnvelope[]>;
   query(filter?: MissionQueryFilter, page?: MissionPageRequest): Promise<MissionPage>;
   replay(request?: MissionReplayRequest): Promise<MissionReplayPage>;
+}
+
+export interface DisputeRepository {
+  save(dispute: DisputeCase): Promise<void>;
+  getById(id: string): Promise<DisputeCase | undefined>;
+  list(status?: DisputeCase["status"]): Promise<DisputeCase[]>;
 }
 
 export interface ParticipantRepository {

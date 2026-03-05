@@ -18,6 +18,12 @@ export const DomainEvents = {
   MissionSettled: "mission.settled",
   MissionFailed: "mission.failed",
 
+  DisputeOpened: "dispute.opened",
+  DisputeEvidenceSubmitted: "dispute.evidence_submitted",
+  DisputeEvidenceClosed: "dispute.evidence_closed",
+  DisputeJuryVoteCast: "dispute.jury_vote_cast",
+  DisputeResolved: "dispute.resolved",
+
   HeartbeatTaskRegistered: "heartbeat.task_registered",
   HeartbeatTaskExecuted: "heartbeat.task_executed",
   HeartbeatTaskDisabled: "heartbeat.task_disabled",

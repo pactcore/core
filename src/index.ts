@@ -31,6 +31,14 @@ export {
   calculateChallengePenalty,
   splitForfeitedChallengeStake,
 } from "./domain/challenge-stake";
+export type {
+  DisputeCase,
+  DisputeConfig,
+  DisputeEvidence,
+  DisputeStatus,
+  DisputeVerdict,
+  JuryVote,
+} from "./domain/dispute-resolution";
 export { ThreeLayerValidationPipeline } from "./domain/validation-pipeline";
 export { ReputationModel } from "./domain/reputation";
 export {
@@ -100,9 +108,23 @@ export {
   type CompensationModel,
   type CompensationLeg,
 } from "./domain/economics";
+export {
+  DEFAULT_SPAM_SCORE_MODEL,
+  DEFAULT_STAKE_REQUIREMENTS,
+  DEFAULT_RATE_LIMITS,
+  calculateSpamScore,
+  getStakeRequirement,
+  type AntiSpamAction,
+  type StakeRequirement,
+  type SpamScoreModel,
+  type RateLimitPolicy,
+  type ParticipantSpamStats,
+} from "./domain/anti-spam";
 export { PactMissions } from "./application/modules/pact-missions";
+export { PactDisputes } from "./application/modules/pact-disputes";
 export { PactHeartbeat } from "./application/modules/pact-heartbeat";
 export { PactEconomics } from "./application/modules/pact-economics";
+export { PactAntiSpam } from "./application/modules/pact-anti-spam";
 export type {
   SettlementConnectorRequest,
   SettlementConnectorResult,
@@ -139,11 +161,13 @@ export { InMemoryApiQuotaAllocationConnector } from "./infrastructure/settlement
 export { InMemoryDurableSettlementRecordRepository } from "./infrastructure/repositories/in-memory-durable-settlement-record-repository";
 export { FileBackedDurableSettlementRecordRepository } from "./infrastructure/repositories/file-backed-durable-settlement-record-repository";
 export { FileBackedMissionRepository } from "./infrastructure/repositories/file-backed-mission-repository";
+export { InMemoryDisputeRepository } from "./infrastructure/repositories/in-memory-dispute-repository";
 export { SQLiteTaskRepository } from "./infrastructure/repositories/sqlite-task-repository";
 export { SQLiteParticipantRepository } from "./infrastructure/repositories/sqlite-participant-repository";
 export { SQLiteReputationRepository } from "./infrastructure/repositories/sqlite-reputation-repository";
 export { InMemoryReputationProfileRepository } from "./infrastructure/reputation/in-memory-reputation-profile-repository";
 export { InMemoryReputationEventRepository } from "./infrastructure/reputation/in-memory-reputation-event-repository";
+export { InMemoryAntiSpamRateLimitStore } from "./infrastructure/anti-spam/in-memory-anti-spam-rate-limit-store";
 
 // PactCompute infrastructure
 export { InMemoryComputeProviderRegistry } from "./infrastructure/compute/in-memory-compute-provider-registry";

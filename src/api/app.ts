@@ -1,11 +1,13 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { createApiKeyAuth } from "./middleware/api-key-auth";
 import { createRateLimiter } from "./middleware/rate-limiter";
 import { createUsageTracker, UsageTracker } from "./middleware/usage-tracker";
 import { createContainer } from "../application/container";
 import { ParticipantNotFoundError } from "../application/modules/pact-id";
+import type { AntiSpamAction } from "../domain/anti-spam";
 import type { DataCategory } from "../domain/data-marketplace";
+import type { DisputeStatus } from "../domain/dispute-resolution";
 import type { ReputationCategory } from "../domain/reputation-multi";
 import type { ValidationConfig } from "../domain/validation-pipeline";
 import type { TaskEvidence } from "../domain/types";
@@ -21,6 +23,7 @@ import type {
 
 export interface CreateAppOptions {
   enforceApiKeyAuth?: boolean;
+  antiSpamEnabled?: boolean;
   rateLimit?: {
     windowMs?: number;
     maxRequests?: number;
@@ -52,6 +55,32 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
   const apiKeyStore = new InMemoryApiKeyStore();
   const usageTracker = new UsageTracker();
   const shouldRequireApiKey = () => options.enforceApiKeyAuth === true || apiKeyStore.hasKeys();
+  const enforceAntiSpamPolicy = async (
+    c: Context,
+    participantId: string,
+    action: AntiSpamAction,
+    providedStakeCents?: number,
+  ): Promise<void> => {
+    if (options.antiSpamEnabled === false) return;
+    const rateLimit = await container.pactAntiSpam.checkRateLimit(participantId, action);
+    if (!rateLimit.allowed) {
+      if (rateLimit.retryAfterMs !== undefined) {
+        c.header("Retry-After", String(Math.ceil(rateLimit.retryAfterMs / 1_000)));
+      }
+      throw new HTTPException(429, {
+        message: `Anti-spam rate limit exceeded for ${action}`,
+      });
+    }
+
+    if (providedStakeCents !== undefined) {
+      const { stakeCents } = await container.pactAntiSpam.calculateRequiredStake(participantId, action);
+      if (providedStakeCents < stakeCents) {
+        throw new HTTPException(400, {
+          message: `Insufficient anti-spam stake for ${action}: required ${stakeCents} cents`,
+        });
+      }
+    }
+  };
 
   app.use("*", async (c, next) => {
     const startedAt = Date.now();
@@ -155,6 +184,16 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     });
   });
 
+  app.get("/events/replay", async (c) => {
+    const fromOffsetValue = c.req.query("fromOffset");
+    const fromOffset = normalizeOffsetValue(fromOffsetValue);
+    const limit = normalizeLimitValue(c.req.query("limit"), 100, 1_000);
+    return c.json({
+      records: await container.eventJournal.replay(fromOffset, limit),
+      nextOffset: fromOffset !== undefined ? fromOffset + limit : limit,
+    });
+  });
+
   app.post("/admin/api-keys", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const ownerId = body.ownerId ? String(body.ownerId) : "";
@@ -200,6 +239,46 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
 
   app.get("/admin/usage/overall", async (c) => {
     return c.json(usageTracker.getOverallStats());
+  });
+
+  app.post("/anti-spam/check", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const participantId = body.participantId ? String(body.participantId) : "";
+    const action = body.action ? String(body.action) : "";
+    if (!participantId) {
+      throw new HTTPException(400, { message: "participantId is required" });
+    }
+    if (!isAntiSpamAction(action)) {
+      throw new HTTPException(400, { message: "Invalid anti-spam action" });
+    }
+
+    const rateLimit = await container.pactAntiSpam.checkRateLimit(participantId, action);
+    const requiredStake = await container.pactAntiSpam.calculateRequiredStake(participantId, action);
+    return c.json({
+      participantId,
+      action,
+      ...rateLimit,
+      ...requiredStake,
+    });
+  });
+
+  app.post("/anti-spam/record", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const participantId = body.participantId ? String(body.participantId) : "";
+    const action = body.action ? String(body.action) : "";
+    if (!participantId) {
+      throw new HTTPException(400, { message: "participantId is required" });
+    }
+    if (!isAntiSpamAction(action)) {
+      throw new HTTPException(400, { message: "Invalid anti-spam action" });
+    }
+
+    await container.pactAntiSpam.recordAction(participantId, action);
+    return c.json({ recorded: true }, 201);
+  });
+
+  app.get("/anti-spam/:participantId/profile", async (c) => {
+    return c.json(await container.pactAntiSpam.getParticipantSpamProfile(c.req.param("participantId")));
   });
 
   app.get("/reputation/leaderboard", async (c) => {
@@ -421,14 +500,22 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
 
   app.post("/tasks", async (c) => {
     const body = await c.req.json();
+    const issuerId = String(body.issuerId);
+    const providedStakeCents =
+      typeof body.stakeCents === "number" && Number.isFinite(body.stakeCents)
+        ? Math.floor(body.stakeCents)
+        : undefined;
+    await enforceAntiSpamPolicy(c, issuerId, "task_creation", providedStakeCents);
+
     const task = await container.pactTasks.createTask({
       title: String(body.title),
       description: String(body.description),
-      issuerId: String(body.issuerId),
+      issuerId,
       paymentCents: Number(body.paymentCents),
       location: body.location,
       constraints: body.constraints,
     });
+    await container.pactAntiSpam.recordAction(issuerId, "task_creation");
     return c.json(task, 201);
   });
 
@@ -464,6 +551,116 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
   app.get("/tasks/:id", async (c) => {
     const task = await container.pactTasks.getTask(c.req.param("id"));
     return c.json(task);
+  });
+
+  app.post("/missions", async (c) => {
+    const body = await c.req.json();
+    const mission = await container.pactMissions.createMission({
+      issuerId: String(body.issuerId),
+      title: String(body.title),
+      budgetCents: Number(body.budgetCents),
+      context: body.context,
+      compensationModel: body.compensationModel,
+      targetAgentIds: Array.isArray(body.targetAgentIds) ? body.targetAgentIds.map(String) : [],
+      maxRetries: typeof body.maxRetries === "number" ? body.maxRetries : undefined,
+    });
+    return c.json(mission, 201);
+  });
+
+  app.get("/missions", async (c) => {
+    return c.json(await container.pactMissions.listMissions());
+  });
+
+  app.get("/missions/:id", async (c) => {
+    return c.json(await container.pactMissions.getMission(c.req.param("id")));
+  });
+
+  app.post("/missions/:id/claim", async (c) => {
+    const body = await c.req.json();
+    const mission = await container.pactMissions.claimMission(c.req.param("id"), String(body.agentId));
+    return c.json(mission);
+  });
+
+  app.post("/missions/:id/steps", async (c) => {
+    const body = await c.req.json();
+    const kind = String(body.kind);
+    if (!isExecutionStepKind(kind)) {
+      throw new HTTPException(400, { message: "Invalid execution step kind" });
+    }
+
+    const step = await container.pactMissions.appendExecutionStep({
+      missionId: c.req.param("id"),
+      agentId: String(body.agentId),
+      kind,
+      summary: String(body.summary),
+      inputHash: body.inputHash ? String(body.inputHash) : undefined,
+      outputHash: body.outputHash ? String(body.outputHash) : undefined,
+    });
+    return c.json(step, 201);
+  });
+
+  app.post("/missions/:id/evidence", async (c) => {
+    const body = await c.req.json();
+    const evidence = await container.pactMissions.submitEvidenceBundle({
+      missionId: c.req.param("id"),
+      agentId: String(body.agentId),
+      summary: String(body.summary),
+      artifactUris: Array.isArray(body.artifactUris) ? body.artifactUris.map(String) : [],
+      bundleHash: String(body.bundleHash),
+      stepId: body.stepId ? String(body.stepId) : undefined,
+      signature: body.signature ? String(body.signature) : undefined,
+    });
+    return c.json(evidence, 201);
+  });
+
+  app.post("/missions/:id/verdict", async (c) => {
+    const body = await c.req.json();
+    const verdict = await container.pactMissions.recordVerdict({
+      missionId: c.req.param("id"),
+      reviewerId: String(body.reviewerId),
+      approve: Boolean(body.approve),
+      confidence: Number(body.confidence),
+      notes: body.notes ? String(body.notes) : undefined,
+      challengeStakeCents:
+        typeof body.challengeStakeCents === "number" ? body.challengeStakeCents : undefined,
+      challengeCounterpartyId: body.challengeCounterpartyId
+        ? String(body.challengeCounterpartyId)
+        : undefined,
+    });
+    return c.json(verdict, 201);
+  });
+
+  app.post("/missions/:id/challenges", async (c) => {
+    const body = await c.req.json();
+    const reason = String(body.reason);
+    if (!isMissionChallengeReason(reason)) {
+      throw new HTTPException(400, { message: "Invalid mission challenge reason" });
+    }
+
+    const mission = await container.pactMissions.openMissionChallenge({
+      missionId: c.req.param("id"),
+      challengerId: String(body.challengerId),
+      counterpartyId: String(body.counterpartyId),
+      reason,
+      stakeAmountCents: typeof body.stakeAmountCents === "number" ? body.stakeAmountCents : undefined,
+      triggeredByVerdictIds: Array.isArray(body.triggeredByVerdictIds)
+        ? body.triggeredByVerdictIds.map(String)
+        : undefined,
+      notes: body.notes ? String(body.notes) : undefined,
+    });
+    return c.json(mission, 201);
+  });
+
+  app.post("/missions/:id/challenges/:challengeId/resolve", async (c) => {
+    const body = await c.req.json();
+    const mission = await container.pactMissions.resolveMissionChallenge({
+      missionId: c.req.param("id"),
+      challengeId: c.req.param("challengeId"),
+      resolverId: String(body.resolverId),
+      approve: Boolean(body.approve),
+      notes: body.notes ? String(body.notes) : undefined,
+    });
+    return c.json(mission);
   });
 
   app.post("/pay/route", async (c) => {
@@ -746,11 +943,24 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
       throw new HTTPException(400, { message: "Invalid data category" });
     }
 
+    const assetId = String(body.assetId);
+    const asset = await container.pactData.getById(assetId);
+    if (!asset) {
+      throw new HTTPException(404, { message: `Asset ${assetId} not found` });
+    }
+
+    const providedStakeCents =
+      typeof body.stakeCents === "number" && Number.isFinite(body.stakeCents)
+        ? Math.floor(body.stakeCents)
+        : undefined;
+    await enforceAntiSpamPolicy(c, asset.ownerId, "data_listing", providedStakeCents);
+
     const listing = await container.pactData.listAsset(
-      String(body.assetId),
+      assetId,
       Number(body.priceCents),
       body.category,
     );
+    await container.pactAntiSpam.recordAction(asset.ownerId, "data_listing");
     return c.json(listing, 201);
   });
 
@@ -1025,6 +1235,76 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(template, 201);
   });
 
+  app.post("/disputes", async (c) => {
+    const body = await c.req.json();
+    const initialEvidence = body.initialEvidence && typeof body.initialEvidence === "object"
+      ? (body.initialEvidence as Record<string, unknown>)
+      : {};
+
+    const dispute = await container.pactDisputes.openDispute(
+      String(body.missionId),
+      String(body.challengerId),
+      {
+        description: String(initialEvidence.description ?? ""),
+        artifactUris: Array.isArray(initialEvidence.artifactUris)
+          ? initialEvidence.artifactUris.map((uri) => String(uri))
+          : [],
+      },
+    );
+
+    return c.json(dispute, 201);
+  });
+
+  app.get("/disputes", async (c) => {
+    const status = c.req.query("status");
+    if (status && !isDisputeStatus(status)) {
+      throw new HTTPException(400, { message: "Invalid dispute status" });
+    }
+
+    return c.json(await container.pactDisputes.listDisputes(status));
+  });
+
+  app.get("/disputes/:id", async (c) => {
+    return c.json(await container.pactDisputes.getDispute(c.req.param("id")));
+  });
+
+  app.post("/disputes/:id/evidence", async (c) => {
+    const body = await c.req.json();
+    const dispute = await container.pactDisputes.submitEvidence(
+      c.req.param("id"),
+      String(body.submitterId),
+      {
+        description: String(body.description ?? ""),
+        artifactUris: Array.isArray(body.artifactUris)
+          ? body.artifactUris.map((uri: unknown) => String(uri))
+          : [],
+      },
+    );
+
+    return c.json(dispute);
+  });
+
+  app.post("/disputes/:id/vote", async (c) => {
+    const body = await c.req.json();
+    const vote = body.vote === "uphold" ? "uphold" : body.vote === "reject" ? "reject" : undefined;
+    if (!vote) {
+      throw new HTTPException(400, { message: "Invalid jury vote value" });
+    }
+
+    const dispute = await container.pactDisputes.castJuryVote(
+      c.req.param("id"),
+      String(body.jurorId),
+      vote,
+      String(body.reasoning ?? ""),
+    );
+
+    return c.json(dispute);
+  });
+
+  app.post("/disputes/:id/resolve", async (c) => {
+    return c.json(await container.pactDisputes.resolveDispute(c.req.param("id")));
+  });
+
   app.onError((error, c) => {
     if (error instanceof HTTPException) {
       return error.getResponse();
@@ -1072,6 +1352,19 @@ function normalizeLimitValue(value: string | undefined, fallback: number, max: n
   return Math.min(max, Math.floor(parsed));
 }
 
+function normalizeOffsetValue(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return undefined;
+  }
+
+  return Math.floor(parsed);
+}
+
 function isSettlementRail(
   value?: string,
 ): value is "llm_metering" | "cloud_billing" | "api_quota" {
@@ -1087,6 +1380,10 @@ function rethrowParticipantNotFound(error: unknown): never {
     throw new HTTPException(404, { message: error.message });
   }
   throw error;
+}
+
+function isAntiSpamAction(value?: string): value is AntiSpamAction {
+  return value === "task_creation" || value === "bid_submission" || value === "data_listing";
 }
 
 function isDataCategory(value?: string): value is DataCategory {
@@ -1108,6 +1405,32 @@ function isReputationCategory(value?: string): value is ReputationCategory {
     value === "responsiveness" ||
     value === "skill_expertise"
   );
+}
+
+function isDisputeStatus(value?: string): value is DisputeStatus {
+  return (
+    value === "open" ||
+    value === "evidence" ||
+    value === "jury_vote" ||
+    value === "resolved"
+  );
+}
+
+function isExecutionStepKind(
+  value?: string,
+): value is "tool_call" | "artifact_produced" | "decision" | "external_action" {
+  return (
+    value === "tool_call" ||
+    value === "artifact_produced" ||
+    value === "decision" ||
+    value === "external_action"
+  );
+}
+
+function isMissionChallengeReason(
+  value?: string,
+): value is "verdict_disagreement" | "low_confidence" | "manual_escalation" {
+  return value === "verdict_disagreement" || value === "low_confidence" || value === "manual_escalation";
 }
 
 function toNonNegativeNumber(value: unknown, fallback: number): number {

@@ -11,6 +11,7 @@ import { SQLiteEventJournal } from "../infrastructure/event-bus/sqlite-event-jou
 import { InMemoryX402PaymentAdapter } from "../infrastructure/payment/in-memory-x402-payment-adapter";
 import { InMemoryHeartbeatSupervisor } from "../infrastructure/heartbeat/in-memory-heartbeat-supervisor";
 import { FileBackedMissionRepository } from "../infrastructure/repositories/file-backed-mission-repository";
+import { InMemoryDisputeRepository } from "../infrastructure/repositories/in-memory-dispute-repository";
 import { InMemoryMissionRepository } from "../infrastructure/repositories/in-memory-mission-repository";
 import { InMemoryParticipantRepository } from "../infrastructure/repositories/in-memory-participant-repository";
 import { InMemoryReputationRepository } from "../infrastructure/repositories/in-memory-reputation-repository";
@@ -54,7 +55,9 @@ import { InMemoryPluginPackageRepository } from "../infrastructure/dev/in-memory
 import { InMemoryPluginListingRepository } from "../infrastructure/dev/in-memory-plugin-listing-repository";
 import { InMemoryPluginInstallRepository } from "../infrastructure/dev/in-memory-plugin-install-repository";
 import { InMemoryPluginRevenueShareRepository } from "../infrastructure/dev/in-memory-plugin-revenue-share-repository";
+import { InMemoryAntiSpamRateLimitStore } from "../infrastructure/anti-spam/in-memory-anti-spam-rate-limit-store";
 import { PactOrchestrator } from "./orchestrator";
+import { PactAntiSpam } from "./modules/pact-anti-spam";
 import { PactCompute } from "./modules/pact-compute";
 import { PactData } from "./modules/pact-data";
 import { PactDev } from "./modules/pact-dev";
@@ -63,12 +66,14 @@ import { PactEconomics } from "./modules/pact-economics";
 import { PactHeartbeat } from "./modules/pact-heartbeat";
 import { PactID } from "./modules/pact-id";
 import { PactMissions } from "./modules/pact-missions";
+import { PactDisputes } from "./modules/pact-disputes";
 import { PactPay } from "./modules/pact-pay";
 import { PactTasks } from "./modules/pact-tasks";
 import { PactZK } from "./modules/pact-zk";
 import { PactReputation } from "./modules/pact-reputation";
 
 export interface PactContainer {
+  pactAntiSpam: PactAntiSpam;
   pactCompute: PactCompute;
   pactTasks: PactTasks;
   pactPay: PactPay;
@@ -79,6 +84,7 @@ export interface PactContainer {
   pactDev: PactDev;
   pactPluginMarketplace: PactPluginMarketplace;
   pactMissions: PactMissions;
+  pactDisputes: PactDisputes;
   pactHeartbeat: PactHeartbeat;
   pactEconomics: PactEconomics;
   eventJournal: EventJournal;
@@ -123,6 +129,7 @@ export function createContainer(
         filePath: missionStoreFile,
       })
     : new InMemoryMissionRepository();
+  const disputeRepository = new InMemoryDisputeRepository();
   const workerRepository = new InMemoryWorkerRepository();
   const participantRepository = dbFile
     ? new SQLiteParticipantRepository({ filePath: dbFile })
@@ -194,9 +201,16 @@ export function createContainer(
   const pluginListingRepository = new InMemoryPluginListingRepository();
   const pluginInstallRepository = new InMemoryPluginInstallRepository();
   const pluginRevenueShareRepository = new InMemoryPluginRevenueShareRepository();
+  const antiSpamRateLimitStore = new InMemoryAntiSpamRateLimitStore();
 
   const pactPay = new PactPay(blockchain, x402Adapter);
   const pactReputation = new PactReputation(reputationProfileRepository, reputationEventRepository);
+  const pactAntiSpam = new PactAntiSpam({
+    rateLimitStore: antiSpamRateLimitStore,
+    participantStatsRepository,
+    reputationRepository,
+    didRepository,
+  });
   const pactID = new PactID(
     participantRepository,
     workerRepository,
@@ -250,6 +264,13 @@ export function createContainer(
       },
     },
   );
+  const pactDisputes = new PactDisputes(
+    disputeRepository,
+    missionRepository,
+    participantRepository,
+    reputationRepository,
+    eventBus,
+  );
   const pactHeartbeat = new PactHeartbeat(heartbeatSupervisor, eventBus);
   const pactEconomics = new PactEconomics({
     settlementRecordRepository,
@@ -271,6 +292,7 @@ export function createContainer(
   orchestrator.register();
 
   return {
+    pactAntiSpam,
     pactCompute,
     pactTasks,
     pactPay,
@@ -281,6 +303,7 @@ export function createContainer(
     pactDev,
     pactPluginMarketplace,
     pactMissions,
+    pactDisputes,
     pactHeartbeat,
     pactEconomics,
     eventJournal,
