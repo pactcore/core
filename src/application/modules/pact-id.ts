@@ -310,6 +310,17 @@ export class PactID {
 
   // ── Worker queries ─────────────────────────────────────────
 
+  async listParticipants(): Promise<Participant[]> {
+    const participantsByRole = await Promise.all(
+      participantRoles.map((role) => this.participantRepository.listByRole(role)),
+    );
+    const byId = new Map<string, Participant>();
+    for (const participant of participantsByRole.flat()) {
+      byId.set(participant.id, participant);
+    }
+    return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+  }
+
   async getWorker(workerId: string): Promise<WorkerProfile | undefined> {
     return this.workerRepository.getById(workerId);
   }
@@ -422,3 +433,5 @@ function identityLevelToChainLevel(level: IdentityLevel): number {
       return 3;
   }
 }
+
+const participantRoles: ParticipantRole[] = ["worker", "validator", "issuer", "agent", "jury"];

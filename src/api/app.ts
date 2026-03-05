@@ -5,6 +5,7 @@ import { createRateLimiter } from "./middleware/rate-limiter";
 import { createUsageTracker, UsageTracker } from "./middleware/usage-tracker";
 import { createContainer } from "../application/container";
 import { ParticipantNotFoundError } from "../application/modules/pact-id";
+import type { AnalyticsPeriod } from "../application/modules/pact-analytics";
 import type { AntiSpamAction } from "../domain/anti-spam";
 import type { DataCategory } from "../domain/data-marketplace";
 import type { DisputeStatus } from "../domain/dispute-resolution";
@@ -194,6 +195,27 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     });
   });
 
+  app.get("/analytics/network", async (c) => {
+    return c.json(await container.pactAnalytics.getNetworkStats());
+  });
+
+  app.get("/analytics/tasks", async (c) => {
+    const periodValue = c.req.query("period");
+    const period = periodValue ?? "day";
+    if (!isAnalyticsPeriod(period)) {
+      throw new HTTPException(400, { message: "Invalid analytics period" });
+    }
+    return c.json(await container.pactAnalytics.getTaskAnalytics(period));
+  });
+
+  app.get("/analytics/economics", async (c) => {
+    return c.json(await container.pactAnalytics.getEconomicAnalytics());
+  });
+
+  app.get("/analytics/security", async (c) => {
+    return c.json(await container.pactAnalytics.getSecurityAnalytics());
+  });
+
   app.post("/admin/api-keys", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const ownerId = body.ownerId ? String(body.ownerId) : "";
@@ -279,6 +301,41 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
 
   app.get("/anti-spam/:participantId/profile", async (c) => {
     return c.json(await container.pactAntiSpam.getParticipantSpamProfile(c.req.param("participantId")));
+  });
+
+  app.get("/security/threats", async (c) => {
+    return c.json(container.pactSecurity.getThreatModel());
+  });
+
+  app.post("/security/audit", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const participants = getRequiredNumberField(body, "participants");
+    const transactions = getRequiredNumberField(body, "transactions");
+    const disputes = getRequiredNumberField(body, "disputes");
+    const avgReputation = getRequiredNumberField(body, "avgReputation");
+
+    if (participants < 0 || transactions < 0 || disputes < 0) {
+      throw new HTTPException(400, {
+        message: "participants, transactions, and disputes must be non-negative numbers",
+      });
+    }
+    if (avgReputation < 0 || avgReputation > 100) {
+      throw new HTTPException(400, { message: "avgReputation must be between 0 and 100" });
+    }
+
+    return c.json(
+      container.pactSecurity.runAudit({
+        participants,
+        transactions,
+        disputes,
+        avgReputation,
+      }),
+    );
+  });
+
+  app.get("/security/sybil-resistance/:participantId", async (c) => {
+    const participantId = c.req.param("participantId");
+    return c.json(await container.pactSecurity.checkSybilResistance(participantId));
   });
 
   app.get("/reputation/leaderboard", async (c) => {
@@ -1371,6 +1428,10 @@ function isSettlementRail(
   return value === "llm_metering" || value === "cloud_billing" || value === "api_quota";
 }
 
+function isAnalyticsPeriod(value?: string): value is AnalyticsPeriod {
+  return value === "hour" || value === "day" || value === "week";
+}
+
 function isSettlementRecordStatus(value?: string): value is "applied" | "reconciled" {
   return value === "applied" || value === "reconciled";
 }
@@ -1451,4 +1512,19 @@ function getClaimBody(body: unknown): Record<string, unknown> {
   }
 
   return payload;
+}
+
+function getRequiredNumberField(body: unknown, fieldName: string): number {
+  if (!body || typeof body !== "object") {
+    throw new HTTPException(400, { message: `${fieldName} is required` });
+  }
+
+  const candidate = (body as Record<string, unknown>)[fieldName];
+  if (typeof candidate !== "number" || !Number.isFinite(candidate)) {
+    throw new HTTPException(400, {
+      message: `${fieldName} must be a finite number`,
+    });
+  }
+
+  return candidate;
 }

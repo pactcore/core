@@ -68,16 +68,20 @@ import { PactID } from "./modules/pact-id";
 import { PactMissions } from "./modules/pact-missions";
 import { PactDisputes } from "./modules/pact-disputes";
 import { PactPay } from "./modules/pact-pay";
+import { PactSecurity } from "./modules/pact-security";
 import { PactTasks } from "./modules/pact-tasks";
 import { PactZK } from "./modules/pact-zk";
 import { PactReputation } from "./modules/pact-reputation";
+import { PactAnalytics } from "./modules/pact-analytics";
 
 export interface PactContainer {
   pactAntiSpam: PactAntiSpam;
   pactCompute: PactCompute;
+  pactSecurity: PactSecurity;
   pactTasks: PactTasks;
   pactPay: PactPay;
   pactReputation: PactReputation;
+  pactAnalytics: PactAnalytics;
   pactID: PactID;
   pactZK: PactZK;
   pactData: PactData;
@@ -211,6 +215,11 @@ export function createContainer(
     reputationRepository,
     didRepository,
   });
+  const pactSecurity = new PactSecurity({
+    participantStatsRepository,
+    didRepository,
+    antiSpamRateLimitStore,
+  });
   const pactID = new PactID(
     participantRepository,
     workerRepository,
@@ -281,6 +290,19 @@ export function createContainer(
       apiQuotaAllocation: new InMemoryApiQuotaAllocationConnector(),
     },
   });
+  const pactAnalytics = new PactAnalytics({
+    pactAntiSpam,
+    pactCompute,
+    pactData,
+    pactDisputes,
+    pactEconomics,
+    pactID,
+    pactMissions,
+    pactPay,
+    pactReputation,
+    pactTasks,
+    eventJournal,
+  });
 
   const orchestrator = new PactOrchestrator(
     eventBus,
@@ -294,9 +316,11 @@ export function createContainer(
   return {
     pactAntiSpam,
     pactCompute,
+    pactSecurity,
     pactTasks,
     pactPay,
     pactReputation,
+    pactAnalytics,
     pactID,
     pactZK,
     pactData,

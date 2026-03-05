@@ -42,6 +42,13 @@ export type {
 export { ThreeLayerValidationPipeline } from "./domain/validation-pipeline";
 export { ReputationModel } from "./domain/reputation";
 export {
+  calculateAutonomyLevel,
+  assessAgentCapability,
+  type AutonomyLevel,
+  type AutonomyMetrics,
+  type AgentCapabilityHistoryEntry,
+} from "./domain/agent-autonomy";
+export {
   calculateOverallScore,
   applyTimeDecay,
   determineReputationLevel,
@@ -69,6 +76,26 @@ export {
   type CollusionCostAnalysis,
   type CollusionDetectorConfig,
 } from "./domain/collusion-detection";
+export {
+  buildThreatModel,
+  assessRisk,
+  type ThreatCategory,
+  type ThreatSeverity,
+  type ThreatEntry,
+  type SecurityAuditResult,
+  type SecurityNetworkStats,
+} from "./domain/security-threat-model";
+export {
+  SybilResistanceScore,
+  FrontRunningDetector,
+  ReplayAttackPrevention,
+  type SybilResistanceInput,
+  type TimedTransaction,
+  type FrontRunningAlert,
+  type FrontRunningDetectorConfig,
+  type NonceFailureReason,
+  type NonceVerificationResult,
+} from "./domain/network-security";
 export {
   MultiDimensionalMatcher,
   DEFAULT_MATCH_WEIGHTS,
@@ -109,6 +136,18 @@ export {
   type CompensationLeg,
 } from "./domain/economics";
 export {
+  NetworkEffectsModel,
+  CrossApplicationSynergy,
+  NetworkGrowthSimulator,
+  calculateNetworkValue,
+  projectGrowth,
+  calculateSynergyScore,
+  type NetworkSnapshot,
+  type GrowthProjection,
+  type SynergyScore,
+  type ApplicationUsage,
+} from "./domain/network-effects";
+export {
   DEFAULT_SPAM_SCORE_MODEL,
   DEFAULT_STAKE_REQUIREMENTS,
   DEFAULT_RATE_LIMITS,
@@ -125,6 +164,8 @@ export { PactDisputes } from "./application/modules/pact-disputes";
 export { PactHeartbeat } from "./application/modules/pact-heartbeat";
 export { PactEconomics } from "./application/modules/pact-economics";
 export { PactAntiSpam } from "./application/modules/pact-anti-spam";
+export { PactSecurity } from "./application/modules/pact-security";
+export { PactAnalytics } from "./application/modules/pact-analytics";
 export type {
   SettlementConnectorRequest,
   SettlementConnectorResult,
