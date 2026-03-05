@@ -5,7 +5,13 @@ import type {
   ScheduledJob,
   Scheduler,
 } from "../contracts";
-import type { ComputeJobResult, ComputeProvider, ComputeUsageRecord } from "../../domain/types";
+import type {
+  ComputeJobResult,
+  ComputeProvider,
+  ComputeProviderCapabilities,
+  ComputeUsageRecord,
+} from "../../domain/types";
+import type { ResourceTier } from "../../domain/compute-pricing";
 import { generateId } from "../utils";
 
 export interface ComputeJobInput {
@@ -15,12 +21,26 @@ export interface ComputeJobInput {
   metadata?: Record<string, string>;
 }
 
+export interface ComputePricingQuote {
+  tier: ResourceTier;
+  estimatedCostCents: number;
+}
+
+export interface ComputePricingEngine {
+  quoteCost(
+    capabilities: ComputeProviderCapabilities,
+    estimatedDurationSeconds: number,
+  ): ComputePricingQuote | undefined;
+  listTiers(): ResourceTier[];
+}
+
 export class PactCompute {
   constructor(
     private readonly scheduler: Scheduler,
     private readonly providerRegistry: ComputeProviderRegistry,
     private readonly resourceMeter: ResourceMeter,
     private readonly executionAdapter: ComputeExecutionAdapter,
+    private readonly pricingEngine?: ComputePricingEngine,
   ) {}
 
   // ── Provider management ────────────────────────────────────
@@ -39,6 +59,17 @@ export class PactCompute {
     minGpu?: number,
   ): Promise<ComputeProvider[]> {
     return this.providerRegistry.findProvidersByCapability(minCpu, minMemory, minGpu);
+  }
+
+  quoteCost(
+    capabilities: ComputeProviderCapabilities,
+    durationSeconds: number,
+  ): ComputePricingQuote | undefined {
+    return this.pricingEngine?.quoteCost(capabilities, durationSeconds);
+  }
+
+  listPricingTiers(): ResourceTier[] {
+    return this.pricingEngine?.listTiers() ?? [];
   }
 
   // ── Job scheduling ─────────────────────────────────────────

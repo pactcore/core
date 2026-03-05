@@ -1,4 +1,5 @@
 import type { CompensationModel } from "./economics";
+import type { IdentityLevel } from "./identity-levels";
 
 export type TaskStatus = "Created" | "Assigned" | "Submitted" | "Verified" | "Completed";
 
@@ -59,12 +60,24 @@ export interface WorkerProfile {
   activeTaskIds: string[];
 }
 
+export interface ParticipantStats {
+  participantId: string;
+  taskCount: number;
+  completedTaskCount: number;
+  reputation: number;
+  hasZKProofOfHumanity: boolean;
+  hasPhoneVerification: boolean;
+  hasIdVerification: boolean;
+}
+
 export interface Participant {
   id: string;
   role: ParticipantRole;
   displayName: string;
   skills: string[];
   location: GeoPoint;
+  identityLevel?: IdentityLevel;
+  stats?: ParticipantStats;
 }
 
 export interface ReputationRecord {

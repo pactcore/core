@@ -1,10 +1,19 @@
 import type {
   DataAccessPolicyRepository,
   DataAssetRepository,
+  DataListingRepository,
+  DataPurchaseRepository,
   IntegrityProofRepository,
   ProvenanceGraph,
 } from "../contracts";
 import type { DataAccessPolicy, IntegrityProof } from "../../domain/types";
+import type {
+  DataCategory,
+  DataListing,
+  DataMarketplaceStats,
+  DataPurchase,
+} from "../../domain/data-marketplace";
+import { calculateRevenueDistribution } from "../../domain/data-marketplace";
 import { generateId } from "../utils";
 
 export interface DataAsset {
@@ -24,12 +33,23 @@ export interface PublishDataAssetInput {
   derivedFrom?: string[];
 }
 
+const DATA_CATEGORIES: DataCategory[] = [
+  "geolocation",
+  "image_video",
+  "survey",
+  "sensor",
+  "labeled",
+  "other",
+];
+
 export class PactData {
   constructor(
     private readonly assetRepository: DataAssetRepository,
     private readonly provenanceGraph: ProvenanceGraph,
     private readonly integrityProofRepository: IntegrityProofRepository,
     private readonly accessPolicyRepository: DataAccessPolicyRepository,
+    private readonly listingRepository?: DataListingRepository,
+    private readonly purchaseRepository?: DataPurchaseRepository,
   ) {}
 
   // ── Asset publishing ───────────────────────────────────────
@@ -122,5 +142,149 @@ export class PactData {
     if (!policy) return false;
     if (policy.isPublic) return true;
     return policy.allowedParticipantIds.includes(participantId);
+  }
+
+  // ── Marketplace ─────────────────────────────────────────────
+
+  async listAsset(assetId: string, priceCents: number, category: DataCategory): Promise<DataListing> {
+    if (!Number.isInteger(priceCents) || priceCents <= 0) {
+      throw new Error("Listing price must be a positive integer number of cents");
+    }
+
+    const asset = await this.assetRepository.getById(assetId);
+    if (!asset) {
+      throw new Error(`Asset ${assetId} not found`);
+    }
+
+    const listing: DataListing = {
+      id: generateId("listing"),
+      assetId,
+      sellerId: asset.ownerId,
+      priceCents,
+      currency: "USDC",
+      category,
+      listedAt: Date.now(),
+      active: true,
+    };
+
+    await this.getListingRepository().save(listing);
+    return listing;
+  }
+
+  async delistAsset(listingId: string): Promise<void> {
+    const listingRepository = this.getListingRepository();
+    const listing = await listingRepository.getById(listingId);
+    if (!listing) {
+      throw new Error(`Listing ${listingId} not found`);
+    }
+
+    await listingRepository.save({
+      ...listing,
+      active: false,
+    });
+  }
+
+  async purchaseAsset(listingId: string, buyerId: string): Promise<DataPurchase> {
+    const listingRepository = this.getListingRepository();
+    const purchaseRepository = this.getPurchaseRepository();
+    const listing = await listingRepository.getById(listingId);
+    if (!listing) {
+      throw new Error(`Listing ${listingId} not found`);
+    }
+    if (!listing.active) {
+      throw new Error(`Listing ${listingId} is not active`);
+    }
+
+    const distribution = calculateRevenueDistribution(listing.priceCents);
+    const purchase: DataPurchase = {
+      id: generateId("purchase"),
+      listingId: listing.id,
+      assetId: listing.assetId,
+      buyerId,
+      priceCents: listing.priceCents,
+      revenueDistribution: distribution,
+      purchasedAt: Date.now(),
+    };
+
+    await purchaseRepository.save(purchase);
+    await this.grantBuyerAccess(listing.assetId, buyerId);
+    return purchase;
+  }
+
+  async getMarketplaceStats(): Promise<DataMarketplaceStats> {
+    const listingRepository = this.getListingRepository();
+    const purchaseRepository = this.getPurchaseRepository();
+
+    const listingMap = new Map<string, DataListing>();
+    for (const category of DATA_CATEGORIES) {
+      const listings = await listingRepository.listByCategory(category);
+      for (const listing of listings) {
+        listingMap.set(listing.id, listing);
+      }
+    }
+
+    const purchaseMap = new Map<string, DataPurchase>();
+    const listedAssetIds = new Set([...listingMap.values()].map((listing) => listing.assetId));
+    for (const assetId of listedAssetIds) {
+      const purchases = await purchaseRepository.listByAsset(assetId);
+      for (const purchase of purchases) {
+        purchaseMap.set(purchase.id, purchase);
+      }
+    }
+
+    const totalRevenueCents = [...purchaseMap.values()].reduce(
+      (sum, purchase) => sum + purchase.priceCents,
+      0,
+    );
+
+    return {
+      totalListings: listingMap.size,
+      totalPurchases: purchaseMap.size,
+      totalRevenueCents,
+    };
+  }
+
+  async listMarketplace(category?: DataCategory): Promise<DataListing[]> {
+    const listingRepository = this.getListingRepository();
+    if (category) {
+      const listings = await listingRepository.listByCategory(category);
+      return listings.filter((listing) => listing.active);
+    }
+    return listingRepository.listActive();
+  }
+
+  private getListingRepository(): DataListingRepository {
+    if (!this.listingRepository) {
+      throw new Error("Data listing repository is not configured");
+    }
+    return this.listingRepository;
+  }
+
+  private getPurchaseRepository(): DataPurchaseRepository {
+    if (!this.purchaseRepository) {
+      throw new Error("Data purchase repository is not configured");
+    }
+    return this.purchaseRepository;
+  }
+
+  private async grantBuyerAccess(assetId: string, buyerId: string): Promise<void> {
+    const existingPolicy = await this.accessPolicyRepository.getByAsset(assetId);
+    if (!existingPolicy) {
+      await this.accessPolicyRepository.save({
+        assetId,
+        allowedParticipantIds: [buyerId],
+        isPublic: false,
+      });
+      return;
+    }
+
+    if (existingPolicy.allowedParticipantIds.includes(buyerId)) {
+      return;
+    }
+
+    await this.accessPolicyRepository.save({
+      ...existingPolicy,
+      allowedParticipantIds: [...existingPolicy.allowedParticipantIds, buyerId],
+    });
   }
 }

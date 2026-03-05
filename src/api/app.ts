@@ -1,8 +1,16 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { createContainer } from "../application/container";
+import { ParticipantNotFoundError } from "../application/modules/pact-id";
+import type { DataCategory } from "../domain/data-marketplace";
 import type { ValidationConfig } from "../domain/validation-pipeline";
 import type { TaskEvidence } from "../domain/types";
+import type {
+  ZKCompletionClaim,
+  ZKIdentityClaim,
+  ZKLocationClaim,
+  ZKReputationClaim,
+} from "../domain/zk-proofs";
 
 export function createApp(validationConfig?: ValidationConfig) {
   const container = createContainer(validationConfig);
@@ -34,6 +42,43 @@ export function createApp(validationConfig?: ValidationConfig) {
     return c.json(didDocument);
   });
 
+  app.get("/id/participants/:id/level", async (c) => {
+    const participantId = c.req.param("id");
+    try {
+      const level = await container.pactID.getIdentityLevel(participantId);
+      return c.json({ participantId, level });
+    } catch (error) {
+      rethrowParticipantNotFound(error);
+    }
+  });
+
+  app.post("/id/participants/:id/upgrade-level", async (c) => {
+    const participantId = c.req.param("id");
+    try {
+      return c.json(await container.pactID.upgradeIdentityLevel(participantId));
+    } catch (error) {
+      rethrowParticipantNotFound(error);
+    }
+  });
+
+  app.get("/id/participants/:id/stats", async (c) => {
+    const participantId = c.req.param("id");
+    const stats = await container.pactID.getParticipantStats(participantId);
+    if (!stats) {
+      throw new HTTPException(404, { message: `Participant not found: ${participantId}` });
+    }
+    return c.json(stats);
+  });
+
+  app.post("/id/participants/:id/task-completed", async (c) => {
+    const participantId = c.req.param("id");
+    try {
+      return c.json(await container.pactID.recordTaskCompletion(participantId));
+    } catch (error) {
+      rethrowParticipantNotFound(error);
+    }
+  });
+
   app.post("/id/credentials", async (c) => {
     const body = await c.req.json();
     const credential = await container.pactID.issueCredential(
@@ -58,6 +103,64 @@ export function createApp(validationConfig?: ValidationConfig) {
       c.req.param("capability"),
     );
     return c.json({ hasCapability });
+  });
+
+  app.post("/zk/proofs/location", async (c) => {
+    const body = await c.req.json();
+    const claimBody = getClaimBody(body);
+    const claim: ZKLocationClaim = {
+      latitude: Number(claimBody.latitude),
+      longitude: Number(claimBody.longitude),
+      radius: Number(claimBody.radius),
+      timestamp: typeof claimBody.timestamp === "number" ? claimBody.timestamp : Date.now(),
+    };
+    const proof = await container.pactZK.generateLocationProof(String(body.proverId), claim);
+    return c.json(proof, 201);
+  });
+
+  app.post("/zk/proofs/completion", async (c) => {
+    const body = await c.req.json();
+    const claimBody = getClaimBody(body);
+    const claim: ZKCompletionClaim = {
+      taskId: String(claimBody.taskId),
+      evidenceHash: String(claimBody.evidenceHash),
+      completedAt: typeof claimBody.completedAt === "number" ? claimBody.completedAt : Date.now(),
+    };
+    const proof = await container.pactZK.generateCompletionProof(String(body.proverId), claim);
+    return c.json(proof, 201);
+  });
+
+  app.post("/zk/proofs/identity", async (c) => {
+    const body = await c.req.json();
+    const claimBody = getClaimBody(body);
+    const claim: ZKIdentityClaim = {
+      participantId: String(claimBody.participantId),
+      isHuman: Boolean(claimBody.isHuman),
+    };
+    const proof = await container.pactZK.generateIdentityProof(String(body.proverId), claim);
+    return c.json(proof, 201);
+  });
+
+  app.post("/zk/proofs/reputation", async (c) => {
+    const body = await c.req.json();
+    const claimBody = getClaimBody(body);
+    const claim: ZKReputationClaim = {
+      participantId: String(claimBody.participantId),
+      minScore: Number(claimBody.minScore),
+      actualAbove: Boolean(claimBody.actualAbove),
+    };
+    const proof = await container.pactZK.generateReputationProof(String(body.proverId), claim);
+    return c.json(proof, 201);
+  });
+
+  app.post("/zk/proofs/:id/verify", async (c) => {
+    const valid = await container.pactZK.verifyProof(c.req.param("id"));
+    return c.json({ valid });
+  });
+
+  app.get("/zk/proofs/:id", async (c) => {
+    const proof = await container.pactZK.getProof(c.req.param("id"));
+    return c.json(proof);
   });
 
   app.post("/tasks", async (c) => {
@@ -146,6 +249,33 @@ export function createApp(validationConfig?: ValidationConfig) {
       minGpuValue ? Number(minGpuValue) : undefined,
     );
     return c.json(providers);
+  });
+
+  app.get("/compute/pricing/tiers", async (c) => {
+    return c.json(container.pactCompute.listPricingTiers());
+  });
+
+  app.post("/compute/pricing/quote", async (c) => {
+    const body = await c.req.json();
+    const capabilities = {
+      cpuCores: toNonNegativeNumber(body.capabilities?.cpuCores, 0),
+      memoryMB: toNonNegativeNumber(body.capabilities?.memoryMB, 0),
+      gpuCount: toNonNegativeNumber(body.capabilities?.gpuCount, 0),
+      gpuModel: body.capabilities?.gpuModel ? String(body.capabilities.gpuModel) : undefined,
+    };
+    const durationSeconds = toNonNegativeNumber(
+      typeof body.durationSeconds === "number"
+        ? body.durationSeconds
+        : body.estimatedDurationSeconds,
+      0,
+    );
+    const quote = container.pactCompute.quoteCost(capabilities, durationSeconds);
+    if (!quote) {
+      throw new HTTPException(400, {
+        message: "No pricing tier matches the requested capabilities",
+      });
+    }
+    return c.json(quote);
   });
 
   app.post("/compute/jobs", async (c) => {
@@ -266,6 +396,46 @@ export function createApp(validationConfig?: ValidationConfig) {
       c.req.param("participantId"),
     );
     return c.json({ allowed });
+  });
+
+  app.post("/data/marketplace/list", async (c) => {
+    const body = await c.req.json();
+    if (!isDataCategory(body.category)) {
+      throw new HTTPException(400, { message: "Invalid data category" });
+    }
+
+    const listing = await container.pactData.listAsset(
+      String(body.assetId),
+      Number(body.priceCents),
+      body.category,
+    );
+    return c.json(listing, 201);
+  });
+
+  app.delete("/data/marketplace/listings/:id", async (c) => {
+    await container.pactData.delistAsset(c.req.param("id"));
+    return c.body(null, 204);
+  });
+
+  app.get("/data/marketplace/listings", async (c) => {
+    const category = c.req.query("category");
+    if (category && !isDataCategory(category)) {
+      throw new HTTPException(400, { message: "Invalid data category" });
+    }
+    return c.json(await container.pactData.listMarketplace(category));
+  });
+
+  app.post("/data/marketplace/purchase", async (c) => {
+    const body = await c.req.json();
+    const purchase = await container.pactData.purchaseAsset(
+      String(body.listingId),
+      String(body.buyerId),
+    );
+    return c.json(purchase, 201);
+  });
+
+  app.get("/data/marketplace/stats", async (c) => {
+    return c.json(await container.pactData.getMarketplaceStats());
   });
 
   app.post("/economics/assets", async (c) => {
@@ -495,4 +665,42 @@ function isSettlementRail(
 
 function isSettlementRecordStatus(value?: string): value is "applied" | "reconciled" {
   return value === "applied" || value === "reconciled";
+}
+
+function rethrowParticipantNotFound(error: unknown): never {
+  if (error instanceof ParticipantNotFoundError) {
+    throw new HTTPException(404, { message: error.message });
+  }
+  throw error;
+}
+
+function isDataCategory(value?: string): value is DataCategory {
+  return (
+    value === "geolocation" ||
+    value === "image_video" ||
+    value === "survey" ||
+    value === "sensor" ||
+    value === "labeled" ||
+    value === "other"
+  );
+}
+
+function toNonNegativeNumber(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return value >= 0 ? value : fallback;
+}
+
+function getClaimBody(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== "object") {
+    return {};
+  }
+
+  const payload = body as Record<string, unknown>;
+  if (payload.claim && typeof payload.claim === "object") {
+    return payload.claim as Record<string, unknown>;
+  }
+
+  return payload;
 }

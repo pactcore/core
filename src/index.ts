@@ -15,6 +15,23 @@ export { GaleShapleyMatcher } from "./domain/matching";
 export { PaymentSplitService } from "./domain/payment-split";
 export { CapabilityPolicyEngine, recommendedCapabilityPolicy } from "./domain/capability-policy";
 export {
+  DEFAULT_LEVEL_CONFIG,
+  determineLevel,
+  getLevelBenefits,
+  type IdentityLevel,
+  type IdentityLevelBenefits,
+  type IdentityLevelRequirements,
+} from "./domain/identity-levels";
+export type {
+  ZKProofType,
+  ZKProofRequest,
+  ZKProof,
+  ZKLocationClaim,
+  ZKCompletionClaim,
+  ZKIdentityClaim,
+  ZKReputationClaim,
+} from "./domain/zk-proofs";
+export {
   validateCompensationModel,
   groupCompensationByAsset,
   type CompensationAsset,
@@ -52,17 +69,40 @@ export { FileBackedMissionRepository } from "./infrastructure/repositories/file-
 export { InMemoryComputeProviderRegistry } from "./infrastructure/compute/in-memory-compute-provider-registry";
 export { InMemoryResourceMeter } from "./infrastructure/compute/in-memory-resource-meter";
 export { InMemoryComputeExecutionAdapter } from "./infrastructure/compute/in-memory-compute-execution-adapter";
+export { DockerExecutionAdapter } from "./infrastructure/compute/docker-execution-adapter";
+export { PricingEngine } from "./infrastructure/compute/pricing-engine";
+export {
+  calculateJobCost,
+  findBestTier,
+  defaultPricingTable,
+  type PricingTable,
+  type ResourceTier,
+} from "./domain/compute-pricing";
 
 // PactID / DID infrastructure
 export { InMemoryDIDRepository } from "./infrastructure/identity/in-memory-did-repository";
 export { InMemoryCredentialIssuer } from "./infrastructure/identity/in-memory-credential-issuer";
 export { InMemoryCredentialRepository } from "./infrastructure/identity/in-memory-credential-repository";
+export { InMemoryParticipantStatsRepository } from "./infrastructure/identity/in-memory-participant-stats-repository";
+export { InMemoryZKProver } from "./infrastructure/zk/in-memory-zk-prover";
+export { InMemoryZKVerifier } from "./infrastructure/zk/in-memory-zk-verifier";
+export { InMemoryZKProofRepository } from "./infrastructure/zk/in-memory-zk-proof-repository";
 
 // PactData infrastructure
 export { InMemoryProvenanceGraph } from "./infrastructure/data/in-memory-provenance-graph";
 export { InMemoryIntegrityProofRepository } from "./infrastructure/data/in-memory-integrity-proof-repository";
 export { InMemoryDataAccessPolicyRepository } from "./infrastructure/data/in-memory-data-access-policy-repository";
 export { InMemoryDataAssetRepository } from "./infrastructure/data/in-memory-data-asset-repository";
+export { InMemoryDataListingRepository } from "./infrastructure/data/in-memory-data-listing-repository";
+export { InMemoryDataPurchaseRepository } from "./infrastructure/data/in-memory-data-purchase-repository";
+export { calculateRevenueDistribution } from "./domain/data-marketplace";
+export type {
+  DataCategory,
+  DataListing,
+  DataPurchase,
+  RevenueDistribution,
+  DataMarketplaceStats,
+} from "./domain/data-marketplace";
 
 // PactDev / Governance infrastructure
 export { InMemoryPolicyRegistry } from "./infrastructure/governance/in-memory-policy-registry";
@@ -75,3 +115,4 @@ export { PactDev } from "./application/modules/pact-dev";
 export { PactID } from "./application/modules/pact-id";
 export { PactTasks } from "./application/modules/pact-tasks";
 export { PactPay } from "./application/modules/pact-pay";
+export { PactZK } from "./application/modules/pact-zk";

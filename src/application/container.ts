@@ -26,13 +26,21 @@ import { InMemoryLlmTokenMeteringConnector } from "../infrastructure/settlement/
 import { InMemoryComputeProviderRegistry } from "../infrastructure/compute/in-memory-compute-provider-registry";
 import { InMemoryResourceMeter } from "../infrastructure/compute/in-memory-resource-meter";
 import { InMemoryComputeExecutionAdapter } from "../infrastructure/compute/in-memory-compute-execution-adapter";
+import { PricingEngine } from "../infrastructure/compute/pricing-engine";
+import { defaultPricingTable } from "../domain/compute-pricing";
 import { InMemoryDIDRepository } from "../infrastructure/identity/in-memory-did-repository";
 import { InMemoryCredentialIssuer } from "../infrastructure/identity/in-memory-credential-issuer";
 import { InMemoryCredentialRepository } from "../infrastructure/identity/in-memory-credential-repository";
+import { InMemoryParticipantStatsRepository } from "../infrastructure/identity/in-memory-participant-stats-repository";
+import { InMemoryZKProver } from "../infrastructure/zk/in-memory-zk-prover";
+import { InMemoryZKVerifier } from "../infrastructure/zk/in-memory-zk-verifier";
+import { InMemoryZKProofRepository } from "../infrastructure/zk/in-memory-zk-proof-repository";
 import { InMemoryProvenanceGraph } from "../infrastructure/data/in-memory-provenance-graph";
 import { InMemoryIntegrityProofRepository } from "../infrastructure/data/in-memory-integrity-proof-repository";
 import { InMemoryDataAccessPolicyRepository } from "../infrastructure/data/in-memory-data-access-policy-repository";
 import { InMemoryDataAssetRepository } from "../infrastructure/data/in-memory-data-asset-repository";
+import { InMemoryDataListingRepository } from "../infrastructure/data/in-memory-data-listing-repository";
+import { InMemoryDataPurchaseRepository } from "../infrastructure/data/in-memory-data-purchase-repository";
 import { InMemoryPolicyRegistry } from "../infrastructure/governance/in-memory-policy-registry";
 import { InMemoryTemplateRepository } from "../infrastructure/governance/in-memory-template-repository";
 import { PactOrchestrator } from "./orchestrator";
@@ -45,12 +53,14 @@ import { PactID } from "./modules/pact-id";
 import { PactMissions } from "./modules/pact-missions";
 import { PactPay } from "./modules/pact-pay";
 import { PactTasks } from "./modules/pact-tasks";
+import { PactZK } from "./modules/pact-zk";
 
 export interface PactContainer {
   pactCompute: PactCompute;
   pactTasks: PactTasks;
   pactPay: PactPay;
   pactID: PactID;
+  pactZK: PactZK;
   pactData: PactData;
   pactDev: PactDev;
   pactMissions: PactMissions;
@@ -71,6 +81,7 @@ export interface PactContainerEnvironment {
   PACT_CHALLENGE_STAKE_ESCROW_ID?: string;
   PACT_CHALLENGE_STAKE_ASSET_ID?: string;
   PACT_CHALLENGE_STAKE_UNIT?: string;
+  PACT_ZK_SECRET?: string;
 }
 
 export interface CreateContainerOptions {
@@ -122,13 +133,21 @@ export function createContainer(
   const providerRegistry = new InMemoryComputeProviderRegistry();
   const resourceMeter = new InMemoryResourceMeter();
   const executionAdapter = new InMemoryComputeExecutionAdapter();
+  const pricingEngine = new PricingEngine(defaultPricingTable);
   const didRepository = new InMemoryDIDRepository();
   const credentialIssuer = new InMemoryCredentialIssuer();
   const credentialRepository = new InMemoryCredentialRepository();
+  const participantStatsRepository = new InMemoryParticipantStatsRepository();
+  const zkSecret = env.PACT_ZK_SECRET ?? "pact-zk-test-secret";
+  const zkProver = new InMemoryZKProver(zkSecret);
+  const zkVerifier = new InMemoryZKVerifier(zkSecret);
+  const zkProofRepository = new InMemoryZKProofRepository();
   const provenanceGraph = new InMemoryProvenanceGraph();
   const integrityProofRepository = new InMemoryIntegrityProofRepository();
   const dataAccessPolicyRepository = new InMemoryDataAccessPolicyRepository();
   const dataAssetRepository = new InMemoryDataAssetRepository();
+  const dataListingRepository = new InMemoryDataListingRepository();
+  const dataPurchaseRepository = new InMemoryDataPurchaseRepository();
   const policyRegistry = new InMemoryPolicyRegistry();
   const templateRepository = new InMemoryTemplateRepository();
 
@@ -140,10 +159,25 @@ export function createContainer(
     didRepository,
     credentialIssuer,
     credentialRepository,
+    participantStatsRepository,
   );
   const pactTasks = new PactTasks(taskManager, workerRepository, eventBus, pactPay);
-  const pactCompute = new PactCompute(scheduler, providerRegistry, resourceMeter, executionAdapter);
-  const pactData = new PactData(dataAssetRepository, provenanceGraph, integrityProofRepository, dataAccessPolicyRepository);
+  const pactCompute = new PactCompute(
+    scheduler,
+    providerRegistry,
+    resourceMeter,
+    executionAdapter,
+    pricingEngine,
+  );
+  const pactZK = new PactZK(zkProver, zkVerifier, zkProofRepository);
+  const pactData = new PactData(
+    dataAssetRepository,
+    provenanceGraph,
+    integrityProofRepository,
+    dataAccessPolicyRepository,
+    dataListingRepository,
+    dataPurchaseRepository,
+  );
   const pactDev = new PactDev(policyRegistry, templateRepository);
   const pactMissions = new PactMissions(
     missionRepository,
@@ -189,6 +223,7 @@ export function createContainer(
     pactTasks,
     pactPay,
     pactID,
+    pactZK,
     pactData,
     pactDev,
     pactMissions,

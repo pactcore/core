@@ -1,6 +1,7 @@
 import type {
   MissionEnvelope,
   Participant,
+  ParticipantStats,
   ReputationRecord,
   Task,
   TaskEvidence,
@@ -8,6 +9,7 @@ import type {
   WorkerProfile,
 } from "../domain/types";
 import type { ValidationOutcome } from "../domain/validation-pipeline";
+import type { ZKProof, ZKProofRequest, ZKProofType } from "../domain/zk-proofs";
 import type { EscrowAccount } from "../blockchain/abstraction";
 
 export interface TaskRepository {
@@ -71,6 +73,11 @@ export interface ParticipantRepository {
   save(participant: Participant): Promise<void>;
   getById(id: string): Promise<Participant | undefined>;
   listByRole(role: Participant["role"]): Promise<Participant[]>;
+}
+
+export interface ParticipantStatsRepository {
+  save(stats: ParticipantStats): Promise<void>;
+  get(participantId: string): Promise<ParticipantStats | undefined>;
 }
 
 export interface WorkerRepository {
@@ -227,6 +234,11 @@ import type {
   PolicyEvaluationResult,
   SDKTemplate,
 } from "../domain/types";
+import type {
+  DataCategory,
+  DataListing,
+  DataPurchase,
+} from "../domain/data-marketplace";
 import type { DataAsset } from "../application/modules/pact-data";
 
 export interface ComputeProviderRegistry {
@@ -267,6 +279,23 @@ export interface CredentialRepository {
   getBySubjectAndCapability(subjectId: string, capability: string): Promise<VerifiableCredential[]>;
 }
 
+// ── PactZK contracts ─────────────────────────────────────────
+
+export interface ZKProver {
+  generate(request: ZKProofRequest, witness: unknown): Promise<ZKProof>;
+}
+
+export interface ZKVerifier {
+  verify(proof: ZKProof): Promise<boolean>;
+}
+
+export interface ZKProofRepository {
+  save(proof: ZKProof): Promise<void>;
+  getById(id: string): Promise<ZKProof | undefined>;
+  getByProver(proverId: string): Promise<ZKProof[]>;
+  getByType(type: ZKProofType): Promise<ZKProof[]>;
+}
+
 // ── PactData contracts ─────────────────────────────────────────
 
 export interface ProvenanceGraph {
@@ -289,6 +318,21 @@ export interface DataAssetRepository {
   save(asset: DataAsset): Promise<void>;
   getById(id: string): Promise<DataAsset | undefined>;
   list(): Promise<DataAsset[]>;
+}
+
+export interface DataListingRepository {
+  save(listing: DataListing): Promise<void>;
+  getById(id: string): Promise<DataListing | undefined>;
+  listByCategory(category: DataCategory): Promise<DataListing[]>;
+  listBySeller(sellerId: string): Promise<DataListing[]>;
+  listActive(): Promise<DataListing[]>;
+}
+
+export interface DataPurchaseRepository {
+  save(purchase: DataPurchase): Promise<void>;
+  getById(id: string): Promise<DataPurchase | undefined>;
+  listByBuyer(buyerId: string): Promise<DataPurchase[]>;
+  listByAsset(assetId: string): Promise<DataPurchase[]>;
 }
 
 // ── PactDev contracts ──────────────────────────────────────────

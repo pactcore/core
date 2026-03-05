@@ -3,13 +3,16 @@ import type {
   CredentialRepository,
   DIDRepository,
   ParticipantRepository,
+  ParticipantStatsRepository,
   ReputationService,
   WorkerRepository,
 } from "../contracts";
+import { determineLevel, type IdentityLevel } from "../../domain/identity-levels";
 import type {
   DIDDocument,
   GeoPoint,
   Participant,
+  ParticipantStats,
   ParticipantRole,
   VerifiableCredential,
   WorkerProfile,
@@ -31,6 +34,13 @@ const defaultLocation: GeoPoint = {
   longitude: 0,
 };
 
+export class ParticipantNotFoundError extends Error {
+  constructor(participantId: string) {
+    super(`Participant not found: ${participantId}`);
+    this.name = "ParticipantNotFoundError";
+  }
+}
+
 export class PactID {
   constructor(
     private readonly participantRepository: ParticipantRepository,
@@ -39,20 +49,27 @@ export class PactID {
     private readonly didRepository: DIDRepository,
     private readonly credentialIssuer: CredentialIssuer,
     private readonly credentialRepository: CredentialRepository,
+    private readonly participantStatsRepository?: ParticipantStatsRepository,
   ) {}
 
   // ── Participant registration (with DID) ────────────────────
 
   async registerParticipant(input: RegisterParticipantInput): Promise<Participant> {
+    const stats = this.buildDefaultStats(input.id);
     const participant: Participant = {
       id: input.id,
       role: input.role,
       displayName: input.displayName,
       skills: input.skills ?? [],
       location: input.location ?? defaultLocation,
+      identityLevel: "basic",
+      stats,
     };
 
     await this.participantRepository.save(participant);
+    if (this.participantStatsRepository) {
+      await this.participantStatsRepository.save(stats);
+    }
     await this.reputationService.setScore(
       participant.id,
       participant.role,
@@ -98,6 +115,70 @@ export class PactID {
     }
 
     return participant;
+  }
+
+  async getIdentityLevel(participantId: string): Promise<IdentityLevel> {
+    const participant = await this.requireParticipant(participantId);
+    const stats = await this.getParticipantStats(participantId);
+
+    if (!stats) {
+      return participant.identityLevel ?? "basic";
+    }
+
+    return determineLevel({
+      taskCount: stats.taskCount,
+      reputation: stats.reputation,
+      hasZKProof: stats.hasZKProofOfHumanity,
+      hasPhoneVerification: stats.hasPhoneVerification,
+      hasIdVerification: stats.hasIdVerification,
+    });
+  }
+
+  async upgradeIdentityLevel(
+    participantId: string,
+  ): Promise<{ previousLevel: IdentityLevel; newLevel: IdentityLevel; participant: Participant }> {
+    const participant = await this.requireParticipant(participantId);
+    const previousLevel = participant.identityLevel ?? "basic";
+    const stats = await this.getOrCreateStats(participant);
+    const newLevel = determineLevel({
+      taskCount: stats.taskCount,
+      reputation: stats.reputation,
+      hasZKProof: stats.hasZKProofOfHumanity,
+      hasPhoneVerification: stats.hasPhoneVerification,
+      hasIdVerification: stats.hasIdVerification,
+    });
+    const updatedParticipant = await this.saveParticipantAndStats(participant, stats, newLevel);
+
+    return { previousLevel, newLevel, participant: updatedParticipant };
+  }
+
+  async getParticipantStats(participantId: string): Promise<ParticipantStats | undefined> {
+    const participant = await this.participantRepository.getById(participantId);
+    if (!participant) {
+      return undefined;
+    }
+
+    if (this.participantStatsRepository) {
+      const fromRepository = await this.participantStatsRepository.get(participantId);
+      if (fromRepository) {
+        return fromRepository;
+      }
+    }
+
+    return participant.stats ?? this.buildDefaultStats(participantId);
+  }
+
+  async recordTaskCompletion(participantId: string): Promise<ParticipantStats> {
+    const participant = await this.requireParticipant(participantId);
+    const stats = await this.getOrCreateStats(participant);
+    const updatedStats: ParticipantStats = {
+      ...stats,
+      taskCount: stats.taskCount + 1,
+      completedTaskCount: stats.completedTaskCount + 1,
+    };
+
+    await this.saveParticipantAndStats(participant, updatedStats, participant.identityLevel ?? "basic");
+    return updatedStats;
   }
 
   // ── DID operations ─────────────────────────────────────────
@@ -174,5 +255,55 @@ export class PactID {
 
   async listWorkers(): Promise<WorkerProfile[]> {
     return this.workerRepository.list();
+  }
+
+  private buildDefaultStats(participantId: string): ParticipantStats {
+    return {
+      participantId,
+      taskCount: 0,
+      completedTaskCount: 0,
+      reputation: 0,
+      hasZKProofOfHumanity: false,
+      hasPhoneVerification: false,
+      hasIdVerification: false,
+    };
+  }
+
+  private async requireParticipant(participantId: string): Promise<Participant> {
+    const participant = await this.participantRepository.getById(participantId);
+    if (!participant) {
+      throw new ParticipantNotFoundError(participantId);
+    }
+    return participant;
+  }
+
+  private async getOrCreateStats(participant: Participant): Promise<ParticipantStats> {
+    const existing = await this.getParticipantStats(participant.id);
+    if (existing) {
+      return existing;
+    }
+
+    const created = this.buildDefaultStats(participant.id);
+    if (this.participantStatsRepository) {
+      await this.participantStatsRepository.save(created);
+    }
+    return created;
+  }
+
+  private async saveParticipantAndStats(
+    participant: Participant,
+    stats: ParticipantStats,
+    identityLevel: IdentityLevel,
+  ): Promise<Participant> {
+    const updatedParticipant: Participant = {
+      ...participant,
+      identityLevel,
+      stats,
+    };
+    await this.participantRepository.save(updatedParticipant);
+    if (this.participantStatsRepository) {
+      await this.participantStatsRepository.save(stats);
+    }
+    return updatedParticipant;
   }
 }
