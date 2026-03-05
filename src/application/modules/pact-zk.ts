@@ -1,5 +1,10 @@
 import type { ZKProofRepository, ZKProver, ZKVerifier } from "../contracts";
 import { generateId } from "../utils";
+import { getCircuitDefinition as getCircuitDefinitionByType, type CircuitDefinition } from "../../domain/zk-circuits";
+import {
+  verifyFormalSecurityProperties,
+  type FormalProof,
+} from "../../domain/zk-formal-verification";
 import type {
   ZKCompletionClaim,
   ZKIdentityClaim,
@@ -9,6 +14,14 @@ import type {
   ZKProofType,
   ZKReputationClaim,
 } from "../../domain/zk-proofs";
+
+export interface FormalPropertyVerificationResult {
+  proofId: string;
+  proofType: ZKProofType;
+  allSatisfied: boolean;
+  properties: FormalProof[];
+  checkedAt: number;
+}
 
 export class PactZK {
   constructor(
@@ -54,6 +67,31 @@ export class PactZK {
 
   async listProofsByProver(proverId: string): Promise<ZKProof[]> {
     return this.proofRepository.getByProver(proverId);
+  }
+
+  getCircuitDefinition(proofType: ZKProofType): CircuitDefinition {
+    return getCircuitDefinitionByType(proofType);
+  }
+
+  async verifyFormalProperties(proofId: string): Promise<FormalPropertyVerificationResult | undefined> {
+    const proof = await this.proofRepository.getById(proofId);
+    if (!proof) {
+      return undefined;
+    }
+
+    const circuit = this.getCircuitDefinition(proof.type);
+    const verification = verifyFormalSecurityProperties(circuit, proof.publicInputs, {
+      commitment: proof.commitment,
+      proof: proof.proof,
+    });
+
+    return {
+      proofId: proof.id,
+      proofType: proof.type,
+      allSatisfied: verification.verified,
+      properties: verification.proofs,
+      checkedAt: verification.checkedAt,
+    };
   }
 
   private async generateProof(

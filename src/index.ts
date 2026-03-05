@@ -110,6 +110,15 @@ export type {
   CreditLine,
   GasSponsorshipGrant,
 } from "./domain/payment-routing";
+export type {
+  MetaTransaction,
+  X402PaymentRequest,
+  X402PaymentReceipt,
+  RelayerConfig,
+  SponsoredGasStats,
+  GasSponsorshipOutcome,
+} from "./domain/x402-protocol";
+export { X402Relayer } from "./infrastructure/payment/x402-relayer";
 export { CapabilityPolicyEngine, recommendedCapabilityPolicy } from "./domain/capability-policy";
 export {
   DEFAULT_LEVEL_CONFIG,
@@ -128,6 +137,38 @@ export type {
   ZKIdentityClaim,
   ZKReputationClaim,
 } from "./domain/zk-proofs";
+export type {
+  WireVisibility,
+  Wire,
+  GateType,
+  Gate,
+  CircuitConstraint,
+  ConstraintSystem,
+  CircuitDefinition,
+  Groth16G1Point,
+  Groth16G2Point,
+  Groth16Proof,
+  CommitmentProof,
+  CircuitProofLike,
+} from "./domain/zk-circuits";
+export {
+  zkCircuitDefinitions,
+  getCircuitDefinition,
+  listCircuitDefinitions,
+  isCircuitProofShapeValid,
+  verifyCircuitConstraints,
+} from "./domain/zk-circuits";
+export type {
+  SecurityProperty,
+  FormalProof,
+  FormalVerificationReport,
+} from "./domain/zk-formal-verification";
+export {
+  verifySoundness,
+  verifyCompleteness,
+  verifyZeroKnowledge,
+  verifyFormalSecurityProperties,
+} from "./domain/zk-formal-verification";
 export {
   validateCompensationModel,
   groupCompensationByAsset,
@@ -135,6 +176,27 @@ export {
   type CompensationModel,
   type CompensationLeg,
 } from "./domain/economics";
+export {
+  calculateEquilibrium,
+  simulateMarketDynamics,
+  calculateWelfare,
+  type MarketEquilibrium,
+  type SupplyDemandPoint,
+  type SupplyDemandCurve,
+  type MarketSimulationConfig,
+  type MarketWelfare,
+} from "./domain/labor-market";
+export {
+  DynamicPricingModel,
+  suggestPrice,
+  calculateSurgeMultiplier,
+  type UrgencyLevel,
+  type ComplexityLevel,
+  type TaskRequirements,
+  type MarketState,
+  type PricingSuggestion,
+  type DynamicPricingConfig,
+} from "./domain/task-pricing";
 export {
   NetworkEffectsModel,
   CrossApplicationSynergy,

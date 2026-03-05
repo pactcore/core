@@ -9,6 +9,7 @@ import { InMemoryEventBus } from "../infrastructure/event-bus/in-memory-event-bu
 import { InMemoryEventJournal } from "../infrastructure/event-bus/in-memory-event-journal";
 import { SQLiteEventJournal } from "../infrastructure/event-bus/sqlite-event-journal";
 import { InMemoryX402PaymentAdapter } from "../infrastructure/payment/in-memory-x402-payment-adapter";
+import { X402Relayer } from "../infrastructure/payment/x402-relayer";
 import { InMemoryHeartbeatSupervisor } from "../infrastructure/heartbeat/in-memory-heartbeat-supervisor";
 import { FileBackedMissionRepository } from "../infrastructure/repositories/file-backed-mission-repository";
 import { InMemoryDisputeRepository } from "../infrastructure/repositories/in-memory-dispute-repository";
@@ -172,6 +173,7 @@ export function createContainer(
   const validatorConsensus = new InMemoryValidatorConsensus(config);
   const blockchain = new InMemoryBaseChainGateway();
   const x402Adapter = new InMemoryX402PaymentAdapter();
+  const x402Relayer = new X402Relayer(x402Adapter);
 
   const providerRegistry = new InMemoryComputeProviderRegistry();
   const resourceMeter = new InMemoryResourceMeter();
@@ -207,7 +209,7 @@ export function createContainer(
   const pluginRevenueShareRepository = new InMemoryPluginRevenueShareRepository();
   const antiSpamRateLimitStore = new InMemoryAntiSpamRateLimitStore();
 
-  const pactPay = new PactPay(blockchain, x402Adapter);
+  const pactPay = new PactPay(blockchain, x402Adapter, "treasury", undefined, undefined, undefined, undefined, x402Relayer);
   const pactReputation = new PactReputation(reputationProfileRepository, reputationEventRepository);
   const pactAntiSpam = new PactAntiSpam({
     rateLimitStore: antiSpamRateLimitStore,

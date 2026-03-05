@@ -19,6 +19,7 @@ import type {
   ZKCompletionClaim,
   ZKIdentityClaim,
   ZKLocationClaim,
+  ZKProofType,
   ZKReputationClaim,
 } from "../domain/zk-proofs";
 
@@ -555,6 +556,22 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(proof);
   });
 
+  app.get("/zk/circuits/:type", async (c) => {
+    const proofType = c.req.param("type");
+    if (!isZKProofType(proofType)) {
+      throw new HTTPException(400, { message: "Invalid ZK proof type" });
+    }
+    return c.json(container.pactZK.getCircuitDefinition(proofType));
+  });
+
+  app.post("/zk/formal-verify/:proofId", async (c) => {
+    const result = await container.pactZK.verifyFormalProperties(c.req.param("proofId"));
+    if (!result) {
+      throw new HTTPException(404, { message: "ZK proof not found" });
+    }
+    return c.json(result);
+  });
+
   app.post("/tasks", async (c) => {
     const body = await c.req.json();
     const issuerId = String(body.issuerId);
@@ -734,6 +751,25 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
       body.reference ? String(body.reference) : body.ref ? String(body.ref) : "",
     );
     return c.json(route, 201);
+  });
+
+  app.post("/pay/x402/relay", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const receipt = await container.pactPay.relayPayment(
+      body.fromId ? String(body.fromId) : body.from ? String(body.from) : "",
+      body.toId ? String(body.toId) : body.to ? String(body.to) : "",
+      typeof body.amountCents === "number"
+        ? body.amountCents
+        : typeof body.amount === "number"
+          ? body.amount
+          : Number(body.amount),
+      body.gasSponsored === true,
+    );
+    return c.json(receipt, 201);
+  });
+
+  app.get("/pay/x402/gas-stats/:beneficiaryId", async (c) => {
+    return c.json(await container.pactPay.getX402SponsoredGasStats(c.req.param("beneficiaryId")));
   });
 
   app.get("/pay/routes", async (c) => {
@@ -1492,6 +1528,10 @@ function isMissionChallengeReason(
   value?: string,
 ): value is "verdict_disagreement" | "low_confidence" | "manual_escalation" {
   return value === "verdict_disagreement" || value === "low_confidence" || value === "manual_escalation";
+}
+
+function isZKProofType(value?: string): value is ZKProofType {
+  return value === "location" || value === "completion" || value === "identity" || value === "reputation";
 }
 
 function toNonNegativeNumber(value: unknown, fallback: number): number {

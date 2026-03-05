@@ -13,12 +13,17 @@ import type {
   MicropaymentBatch,
   PaymentRoute,
 } from "../../domain/payment-routing";
+import type {
+  SponsoredGasStats,
+  X402PaymentReceipt,
+} from "../../domain/x402-protocol";
 import { PaymentSplitService } from "../../domain/payment-split";
 import type { Task } from "../../domain/types";
 import { InMemoryCreditLineManager } from "../../infrastructure/payment/in-memory-credit-line-manager";
 import { InMemoryGasSponsorshipManager } from "../../infrastructure/payment/in-memory-gas-sponsorship-manager";
 import { InMemoryMicropaymentAggregator } from "../../infrastructure/payment/in-memory-micropayment-aggregator";
 import { InMemoryPaymentRouter } from "../../infrastructure/payment/in-memory-payment-router";
+import type { X402Relayer } from "../../infrastructure/payment/x402-relayer";
 
 export interface SettlementResult {
   blockchainTxId: string;
@@ -41,6 +46,7 @@ export class PactPay {
     micropaymentAggregator?: MicropaymentAggregator,
     creditLineManager?: CreditLineManager,
     gasSponsorManager?: GasSponsorshipManager,
+    private readonly x402Relayer?: X402Relayer,
   ) {
     this.paymentRouter = paymentRouter ?? new InMemoryPaymentRouter();
     this.micropaymentAggregator = micropaymentAggregator ?? new InMemoryMicropaymentAggregator();
@@ -89,6 +95,85 @@ export class PactPay {
 
   async ledger(): Promise<PaymentReceipt[]> {
     return this.x402Adapter.ledger();
+  }
+
+  async relayPayment(
+    from: string,
+    to: string,
+    amount: number,
+    gasSponsored = false,
+  ): Promise<X402PaymentReceipt> {
+    if (!from.trim()) {
+      throw new Error("from is required");
+    }
+    if (!to.trim()) {
+      throw new Error("to is required");
+    }
+
+    const amountCents = Math.floor(amount);
+    if (!Number.isFinite(amount) || amountCents <= 0) {
+      throw new Error("amount must be a positive number");
+    }
+
+    const reference = `x402:relay:${crypto.randomUUID()}`;
+    if (this.x402Relayer) {
+      return this.x402Relayer.relay({
+        from,
+        to,
+        amountCents,
+        reference,
+        beneficiaryId: from,
+        gasSponsored,
+      });
+    }
+
+    const paymentReceipt = await this.x402Adapter.transfer({
+      from,
+      to,
+      amountCents,
+      reference,
+    });
+
+    return {
+      from,
+      to,
+      amountCents,
+      reference,
+      beneficiaryId: from,
+      gasSponsored: false,
+      gasUsed: 0,
+      gasCostCents: 0,
+      txId: `x402_meta_${crypto.randomUUID()}`,
+      paymentTxId: paymentReceipt.txId,
+      relayedAt: Date.now(),
+      metaTransaction: {
+        from,
+        to,
+        value: amountCents,
+        data: `x402:${reference}`,
+        nonce: 0,
+        gasPrice: 0,
+        gasLimit: 0,
+        relayerSignature: "relayer_unavailable",
+      },
+    };
+  }
+
+  async getX402SponsoredGasStats(beneficiaryId: string): Promise<SponsoredGasStats> {
+    if (this.x402Relayer) {
+      return this.x402Relayer.getSponsoredGasStats(beneficiaryId);
+    }
+
+    const normalizedBeneficiaryId = beneficiaryId.trim();
+    if (!normalizedBeneficiaryId) {
+      throw new Error("beneficiaryId is required");
+    }
+
+    return {
+      beneficiaryId: normalizedBeneficiaryId,
+      sponsoredGasUsed: 0,
+      sponsoredTxCount: 0,
+    };
   }
 
   async routePayment(
