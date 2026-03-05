@@ -29,6 +29,37 @@ export function createApp(validationConfig?: ValidationConfig) {
     return c.json(await container.pactID.listWorkers());
   });
 
+  app.get("/id/did/:participantId", async (c) => {
+    const didDocument = await container.pactID.getDIDDocument(c.req.param("participantId"));
+    return c.json(didDocument);
+  });
+
+  app.post("/id/credentials", async (c) => {
+    const body = await c.req.json();
+    const credential = await container.pactID.issueCredential(
+      String(body.issuerId),
+      String(body.subjectId),
+      String(body.capability),
+      body.additionalClaims,
+      typeof body.expirationDate === "number" ? body.expirationDate : undefined,
+    );
+    return c.json(credential, 201);
+  });
+
+  app.post("/id/credentials/verify", async (c) => {
+    const body = await c.req.json();
+    const valid = await container.pactID.verifyCredential(body.credential);
+    return c.json({ valid });
+  });
+
+  app.get("/id/capabilities/:participantId/:capability", async (c) => {
+    const hasCapability = await container.pactID.checkCapability(
+      c.req.param("participantId"),
+      c.req.param("capability"),
+    );
+    return c.json({ hasCapability });
+  });
+
   app.post("/tasks", async (c) => {
     const body = await c.req.json();
     const task = await container.pactTasks.createTask({
@@ -80,6 +111,43 @@ export function createApp(validationConfig?: ValidationConfig) {
     return c.json(await container.pactPay.ledger());
   });
 
+  app.get("/compute/providers", async (c) => {
+    return c.json(await container.pactCompute.listProviders());
+  });
+
+  app.post("/compute/providers", async (c) => {
+    const body = await c.req.json();
+    const provider = {
+      id: String(body.id),
+      name: String(body.name),
+      capabilities: {
+        cpuCores: Number(body.capabilities?.cpuCores),
+        memoryMB: Number(body.capabilities?.memoryMB),
+        gpuCount: Number(body.capabilities?.gpuCount),
+        gpuModel: body.capabilities?.gpuModel ? String(body.capabilities.gpuModel) : undefined,
+      },
+      pricePerCpuSecondCents: Number(body.pricePerCpuSecondCents),
+      pricePerGpuSecondCents: Number(body.pricePerGpuSecondCents),
+      pricePerMemoryMBHourCents: Number(body.pricePerMemoryMBHourCents),
+      status: body.status,
+      registeredAt: typeof body.registeredAt === "number" ? body.registeredAt : Date.now(),
+    };
+    await container.pactCompute.registerProvider(provider);
+    return c.json(provider, 201);
+  });
+
+  app.get("/compute/providers/search", async (c) => {
+    const minCpuValue = c.req.query("minCpu");
+    const minMemoryValue = c.req.query("minMemory");
+    const minGpuValue = c.req.query("minGpu");
+    const providers = await container.pactCompute.findProviders(
+      minCpuValue ? Number(minCpuValue) : 1,
+      minMemoryValue ? Number(minMemoryValue) : 1,
+      minGpuValue ? Number(minGpuValue) : undefined,
+    );
+    return c.json(providers);
+  });
+
   app.post("/compute/jobs", async (c) => {
     const body = await c.req.json();
     const job = await container.pactCompute.enqueueComputeJob({
@@ -89,6 +157,20 @@ export function createApp(validationConfig?: ValidationConfig) {
       metadata: body.metadata,
     });
     return c.json(job, 201);
+  });
+
+  app.post("/compute/jobs/:jobId/dispatch", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const result = await container.pactCompute.dispatchJob(
+      c.req.param("jobId"),
+      body.providerId ? String(body.providerId) : undefined,
+    );
+    return c.json(result);
+  });
+
+  app.get("/compute/usage", async (c) => {
+    const jobId = c.req.query("jobId");
+    return c.json(await container.pactCompute.getUsageRecords(jobId));
   });
 
   app.post("/heartbeat/tasks", async (c) => {
@@ -124,6 +206,10 @@ export function createApp(validationConfig?: ValidationConfig) {
     return c.json(executions);
   });
 
+  app.get("/data/assets", async (c) => {
+    return c.json(await container.pactData.list());
+  });
+
   app.post("/data/assets", async (c) => {
     const body = await c.req.json();
     const asset = await container.pactData.publish({
@@ -131,8 +217,55 @@ export function createApp(validationConfig?: ValidationConfig) {
       title: String(body.title),
       uri: String(body.uri),
       tags: Array.isArray(body.tags) ? body.tags.map(String) : [],
+      derivedFrom: Array.isArray(body.derivedFrom) ? body.derivedFrom.map(String) : undefined,
     });
     return c.json(asset, 201);
+  });
+
+  app.get("/data/assets/:assetId/lineage", async (c) => {
+    const lineage = await container.pactData.getLineage(c.req.param("assetId"));
+    return c.json(lineage);
+  });
+
+  app.get("/data/assets/:assetId/dependents", async (c) => {
+    const dependents = await container.pactData.getDependents(c.req.param("assetId"));
+    return c.json(dependents);
+  });
+
+  app.post("/data/assets/:assetId/integrity", async (c) => {
+    const body = await c.req.json();
+    const proof = await container.pactData.registerIntegrityProof(
+      c.req.param("assetId"),
+      body.contentHash ? String(body.contentHash) : String(body.hash),
+    );
+    return c.json(proof, 201);
+  });
+
+  app.post("/data/assets/:assetId/integrity/verify", async (c) => {
+    const body = await c.req.json();
+    const valid = await container.pactData.verifyIntegrity(
+      c.req.param("assetId"),
+      body.contentHash ? String(body.contentHash) : String(body.hash),
+    );
+    return c.json({ valid });
+  });
+
+  app.put("/data/assets/:assetId/access", async (c) => {
+    const body = await c.req.json();
+    const policy = await container.pactData.setAccessPolicy(
+      c.req.param("assetId"),
+      Array.isArray(body.allowedParticipantIds) ? body.allowedParticipantIds.map(String) : [],
+      Boolean(body.isPublic),
+    );
+    return c.json(policy);
+  });
+
+  app.get("/data/assets/:assetId/access/:participantId", async (c) => {
+    const allowed = await container.pactData.checkAccess(
+      c.req.param("assetId"),
+      c.req.param("participantId"),
+    );
+    return c.json({ allowed });
   });
 
   app.post("/economics/assets", async (c) => {
@@ -265,6 +398,10 @@ export function createApp(validationConfig?: ValidationConfig) {
     return c.json(record);
   });
 
+  app.get("/dev/integrations", async (c) => {
+    return c.json(await container.pactDev.list());
+  });
+
   app.post("/dev/integrations", async (c) => {
     const body = await c.req.json();
     const integration = await container.pactDev.register({
@@ -273,6 +410,64 @@ export function createApp(validationConfig?: ValidationConfig) {
       webhookUrl: String(body.webhookUrl),
     });
     return c.json(integration, 201);
+  });
+
+  app.post("/dev/integrations/:id/activate", async (c) => {
+    const integration = await container.pactDev.activate(c.req.param("id"));
+    return c.json(integration);
+  });
+
+  app.post("/dev/integrations/:id/suspend", async (c) => {
+    const integration = await container.pactDev.suspend(c.req.param("id"));
+    return c.json(integration);
+  });
+
+  app.post("/dev/integrations/:id/deprecate", async (c) => {
+    const integration = await container.pactDev.deprecate(c.req.param("id"));
+    return c.json(integration);
+  });
+
+  app.get("/dev/policies", async (c) => {
+    return c.json(await container.pactDev.listPolicies());
+  });
+
+  app.post("/dev/policies", async (c) => {
+    const body = await c.req.json();
+    const createdAt = typeof body.createdAt === "number" ? body.createdAt : Date.now();
+    const policyPackage = {
+      id: body.id ? String(body.id) : `pkg_${crypto.randomUUID()}`,
+      name: String(body.name),
+      version: String(body.version),
+      rules: Array.isArray(body.rules) ? body.rules : [],
+      ownerId: String(body.ownerId),
+      createdAt,
+      updatedAt: typeof body.updatedAt === "number" ? body.updatedAt : createdAt,
+    };
+    await container.pactDev.registerPolicy(policyPackage);
+    return c.json(policyPackage, 201);
+  });
+
+  app.post("/dev/policies/evaluate", async (c) => {
+    const body = await c.req.json();
+    const context = body.context && typeof body.context === "object" ? body.context : body;
+    const result = await container.pactDev.evaluatePolicy(context);
+    return c.json(result);
+  });
+
+  app.get("/dev/templates", async (c) => {
+    return c.json(await container.pactDev.listTemplates());
+  });
+
+  app.post("/dev/templates", async (c) => {
+    const body = await c.req.json();
+    const template = await container.pactDev.registerTemplate({
+      name: String(body.name),
+      language: String(body.language),
+      repoUrl: String(body.repoUrl),
+      description: String(body.description),
+      tags: Array.isArray(body.tags) ? body.tags.map(String) : [],
+    });
+    return c.json(template, 201);
   });
 
   app.onError((error, c) => {
