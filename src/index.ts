@@ -42,6 +42,18 @@ export type {
 export { ThreeLayerValidationPipeline } from "./domain/validation-pipeline";
 export { ReputationModel } from "./domain/reputation";
 export {
+  simulateVerificationCost,
+  calculateOptimalStrategy,
+  type CostAccuracyTradeoff,
+  type VerificationStrategy,
+} from "./domain/verification-cost-model";
+export {
+  calculateNashEquilibrium,
+  isStableEquilibrium,
+  type NashEquilibriumState,
+  type PayoffMatrix,
+} from "./domain/nash-equilibrium";
+export {
   calculateAutonomyLevel,
   assessAgentCapability,
   type AutonomyLevel,
@@ -210,6 +222,21 @@ export {
   type ApplicationUsage,
 } from "./domain/network-effects";
 export {
+  EcosystemModule,
+  getModuleDependencies,
+  assessEcosystemHealth,
+  calculateCrossAppSynergy,
+  type ModuleDependency,
+  type ModuleStatSnapshot,
+  type EcosystemModuleStats,
+  type EcosystemHealthState,
+  type ModuleHealth,
+  type EcosystemHealth,
+  type CrossAppUserActivity,
+  type ModuleCoverage,
+  type CrossAppSynergy,
+} from "./domain/ecosystem";
+export {
   DEFAULT_SPAM_SCORE_MODEL,
   DEFAULT_STAKE_REQUIREMENTS,
   DEFAULT_RATE_LIMITS,
@@ -228,6 +255,7 @@ export { PactEconomics } from "./application/modules/pact-economics";
 export { PactAntiSpam } from "./application/modules/pact-anti-spam";
 export { PactSecurity } from "./application/modules/pact-security";
 export { PactAnalytics } from "./application/modules/pact-analytics";
+export { PactEcosystem } from "./application/modules/pact-ecosystem";
 export type {
   SettlementConnectorRequest,
   SettlementConnectorResult,

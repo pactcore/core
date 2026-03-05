@@ -74,6 +74,7 @@ import { PactTasks } from "./modules/pact-tasks";
 import { PactZK } from "./modules/pact-zk";
 import { PactReputation } from "./modules/pact-reputation";
 import { PactAnalytics } from "./modules/pact-analytics";
+import { PactEcosystem } from "./modules/pact-ecosystem";
 
 export interface PactContainer {
   pactAntiSpam: PactAntiSpam;
@@ -92,6 +93,7 @@ export interface PactContainer {
   pactDisputes: PactDisputes;
   pactHeartbeat: PactHeartbeat;
   pactEconomics: PactEconomics;
+  pactEcosystem: PactEcosystem;
   eventJournal: EventJournal;
   agentMailbox: InMemoryAgentMailbox;
 }
@@ -305,6 +307,14 @@ export function createContainer(
     pactTasks,
     eventJournal,
   });
+  const pactEcosystem = new PactEcosystem({
+    pactTasks,
+    pactPay,
+    pactID,
+    pactData,
+    pactCompute,
+    pactDev,
+  });
 
   const orchestrator = new PactOrchestrator(
     eventBus,
@@ -332,6 +342,7 @@ export function createContainer(
     pactDisputes,
     pactHeartbeat,
     pactEconomics,
+    pactEcosystem,
     eventJournal,
     agentMailbox,
   };

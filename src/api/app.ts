@@ -217,6 +217,18 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(await container.pactAnalytics.getSecurityAnalytics());
   });
 
+  app.get("/ecosystem/status", async (c) => {
+    return c.json(await container.pactEcosystem.getEcosystemStatus());
+  });
+
+  app.get("/ecosystem/modules", async (c) => {
+    return c.json(container.pactEcosystem.getModuleGraph());
+  });
+
+  app.get("/ecosystem/synergy", async (c) => {
+    return c.json(await container.pactEcosystem.getCrossAppMetrics());
+  });
+
   app.post("/admin/api-keys", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const ownerId = body.ownerId ? String(body.ownerId) : "";
