@@ -211,3 +211,97 @@ export interface BlockchainGateway {
   releaseEscrow(taskId: string, payouts: Record<string, number>): Promise<string>;
   getEscrow(taskId: string): Promise<EscrowAccount | undefined>;
 }
+
+// ── PactCompute contracts ──────────────────────────────────────
+
+import type {
+  ComputeProvider,
+  ComputeUsageRecord,
+  ComputeJobResult,
+  DIDDocument,
+  VerifiableCredential,
+  ProvenanceEdge,
+  IntegrityProof,
+  DataAccessPolicy,
+  PolicyPackage,
+  PolicyEvaluationResult,
+  SDKTemplate,
+} from "../domain/types";
+import type { DataAsset } from "../application/modules/pact-data";
+
+export interface ComputeProviderRegistry {
+  registerProvider(provider: ComputeProvider): Promise<void>;
+  getProvider(id: string): Promise<ComputeProvider | undefined>;
+  listProviders(): Promise<ComputeProvider[]>;
+  findProvidersByCapability(minCpu: number, minMemory: number, minGpu?: number): Promise<ComputeProvider[]>;
+}
+
+export interface ResourceMeter {
+  record(usage: ComputeUsageRecord): Promise<void>;
+  getByJob(jobId: string): Promise<ComputeUsageRecord[]>;
+  getByProvider(providerId: string): Promise<ComputeUsageRecord[]>;
+  listAll(): Promise<ComputeUsageRecord[]>;
+}
+
+export interface ComputeExecutionAdapter {
+  execute(job: ScheduledJob, provider: ComputeProvider): Promise<ComputeJobResult>;
+}
+
+// ── PactID / DID contracts ─────────────────────────────────────
+
+export interface DIDRepository {
+  save(doc: DIDDocument): Promise<void>;
+  getByDID(did: string): Promise<DIDDocument | undefined>;
+  getByParticipantId(participantId: string): Promise<DIDDocument | undefined>;
+}
+
+export interface CredentialIssuer {
+  issue(credential: Omit<VerifiableCredential, "id" | "proof">): Promise<VerifiableCredential>;
+  verify(credential: VerifiableCredential): Promise<boolean>;
+}
+
+export interface CredentialRepository {
+  save(credential: VerifiableCredential): Promise<void>;
+  getById(id: string): Promise<VerifiableCredential | undefined>;
+  getBySubject(subjectId: string): Promise<VerifiableCredential[]>;
+  getBySubjectAndCapability(subjectId: string, capability: string): Promise<VerifiableCredential[]>;
+}
+
+// ── PactData contracts ─────────────────────────────────────────
+
+export interface ProvenanceGraph {
+  addEdge(edge: ProvenanceEdge): Promise<void>;
+  getLineage(assetId: string): Promise<ProvenanceEdge[]>;
+  getDependents(assetId: string): Promise<ProvenanceEdge[]>;
+}
+
+export interface IntegrityProofRepository {
+  save(proof: IntegrityProof): Promise<void>;
+  getByAsset(assetId: string): Promise<IntegrityProof | undefined>;
+}
+
+export interface DataAccessPolicyRepository {
+  save(policy: DataAccessPolicy): Promise<void>;
+  getByAsset(assetId: string): Promise<DataAccessPolicy | undefined>;
+}
+
+export interface DataAssetRepository {
+  save(asset: DataAsset): Promise<void>;
+  getById(id: string): Promise<DataAsset | undefined>;
+  list(): Promise<DataAsset[]>;
+}
+
+// ── PactDev contracts ──────────────────────────────────────────
+
+export interface PolicyRegistry {
+  registerPackage(pkg: PolicyPackage): Promise<void>;
+  getPackage(id: string): Promise<PolicyPackage | undefined>;
+  listPackages(): Promise<PolicyPackage[]>;
+  evaluatePolicy(context: Record<string, unknown>): Promise<PolicyEvaluationResult>;
+}
+
+export interface TemplateRepository {
+  save(template: SDKTemplate): Promise<void>;
+  getById(id: string): Promise<SDKTemplate | undefined>;
+  list(): Promise<SDKTemplate[]>;
+}

@@ -23,6 +23,18 @@ import { InMemoryValidatorConsensus } from "../infrastructure/validator-consensu
 import { InMemoryApiQuotaAllocationConnector } from "../infrastructure/settlement/in-memory-api-quota-allocation-connector";
 import { InMemoryCloudCreditBillingConnector } from "../infrastructure/settlement/in-memory-cloud-credit-billing-connector";
 import { InMemoryLlmTokenMeteringConnector } from "../infrastructure/settlement/in-memory-llm-token-metering-connector";
+import { InMemoryComputeProviderRegistry } from "../infrastructure/compute/in-memory-compute-provider-registry";
+import { InMemoryResourceMeter } from "../infrastructure/compute/in-memory-resource-meter";
+import { InMemoryComputeExecutionAdapter } from "../infrastructure/compute/in-memory-compute-execution-adapter";
+import { InMemoryDIDRepository } from "../infrastructure/identity/in-memory-did-repository";
+import { InMemoryCredentialIssuer } from "../infrastructure/identity/in-memory-credential-issuer";
+import { InMemoryCredentialRepository } from "../infrastructure/identity/in-memory-credential-repository";
+import { InMemoryProvenanceGraph } from "../infrastructure/data/in-memory-provenance-graph";
+import { InMemoryIntegrityProofRepository } from "../infrastructure/data/in-memory-integrity-proof-repository";
+import { InMemoryDataAccessPolicyRepository } from "../infrastructure/data/in-memory-data-access-policy-repository";
+import { InMemoryDataAssetRepository } from "../infrastructure/data/in-memory-data-asset-repository";
+import { InMemoryPolicyRegistry } from "../infrastructure/governance/in-memory-policy-registry";
+import { InMemoryTemplateRepository } from "../infrastructure/governance/in-memory-template-repository";
 import { PactOrchestrator } from "./orchestrator";
 import { PactCompute } from "./modules/pact-compute";
 import { PactData } from "./modules/pact-data";
@@ -107,12 +119,32 @@ export function createContainer(
   const blockchain = new InMemoryBaseChainGateway();
   const x402Adapter = new InMemoryX402PaymentAdapter();
 
+  const providerRegistry = new InMemoryComputeProviderRegistry();
+  const resourceMeter = new InMemoryResourceMeter();
+  const executionAdapter = new InMemoryComputeExecutionAdapter();
+  const didRepository = new InMemoryDIDRepository();
+  const credentialIssuer = new InMemoryCredentialIssuer();
+  const credentialRepository = new InMemoryCredentialRepository();
+  const provenanceGraph = new InMemoryProvenanceGraph();
+  const integrityProofRepository = new InMemoryIntegrityProofRepository();
+  const dataAccessPolicyRepository = new InMemoryDataAccessPolicyRepository();
+  const dataAssetRepository = new InMemoryDataAssetRepository();
+  const policyRegistry = new InMemoryPolicyRegistry();
+  const templateRepository = new InMemoryTemplateRepository();
+
   const pactPay = new PactPay(blockchain, x402Adapter);
-  const pactID = new PactID(participantRepository, workerRepository, reputationService);
+  const pactID = new PactID(
+    participantRepository,
+    workerRepository,
+    reputationService,
+    didRepository,
+    credentialIssuer,
+    credentialRepository,
+  );
   const pactTasks = new PactTasks(taskManager, workerRepository, eventBus, pactPay);
-  const pactCompute = new PactCompute(scheduler);
-  const pactData = new PactData();
-  const pactDev = new PactDev();
+  const pactCompute = new PactCompute(scheduler, providerRegistry, resourceMeter, executionAdapter);
+  const pactData = new PactData(dataAssetRepository, provenanceGraph, integrityProofRepository, dataAccessPolicyRepository);
+  const pactDev = new PactDev(policyRegistry, templateRepository);
   const pactMissions = new PactMissions(
     missionRepository,
     participantRepository,
