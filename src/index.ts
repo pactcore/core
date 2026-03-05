@@ -432,8 +432,76 @@ export { PactCompute } from "./application/modules/pact-compute";
 export { PactData } from "./application/modules/pact-data";
 export { PactDev } from "./application/modules/pact-dev";
 export { PactPluginMarketplace } from "./application/modules/pact-plugin-marketplace";
-export { PactID } from "./application/modules/pact-id";
+export { PactID, ParticipantNotFoundError } from "./application/modules/pact-id";
 export { PactTasks } from "./application/modules/pact-tasks";
 export { PactPay } from "./application/modules/pact-pay";
 export { PactZK } from "./application/modules/pact-zk";
 export { PactReputation } from "./application/modules/pact-reputation";
+export { PactOrchestrator } from "./application/orchestrator";
+
+export type {
+  PactContainer,
+  PactContainerEnvironment,
+  CreateContainerOptions,
+} from "./application/container";
+export type {
+  AnalyticsPeriod,
+  TopCategory,
+  TopEarner,
+  ModuleRevenue,
+  NetworkStats,
+  TaskAnalytics,
+  EconomicAnalytics,
+  SecurityAnalytics,
+  PactAnalyticsOptions,
+} from "./application/modules/pact-analytics";
+export type {
+  PactAntiSpamOptions,
+  ParticipantActionWindow,
+  ParticipantSpamProfile,
+} from "./application/modules/pact-anti-spam";
+export type {
+  ComputeJobInput,
+  ComputePricingQuote,
+  ComputePricingEngine,
+} from "./application/modules/pact-compute";
+export type { DataAsset, PublishDataAssetInput } from "./application/modules/pact-data";
+export type {
+  DevIntegration,
+  RegisterDevIntegrationInput,
+  RegisterSDKTemplateInput,
+} from "./application/modules/pact-dev";
+export type { DisputeEvidenceInput, PactDisputesOptions } from "./application/modules/pact-disputes";
+export type {
+  RegisterCompensationAssetInput,
+  RegisterValuationInput,
+  BuildCompensationModelInput,
+  CompensationQuote,
+  ValuationQuote,
+  AssetSettlementLine,
+  SettlementPlan,
+  ExecuteSettlementInput,
+  SettlementExecutionResult,
+  ListSettlementRecordsFilter,
+  QuerySettlementRecordsInput,
+  ReplaySettlementRecordLifecycleInput,
+  ReconcileSettlementRecordRequest,
+  PactEconomicsOptions,
+} from "./application/modules/pact-economics";
+export type { PactEcosystemOptions } from "./application/modules/pact-ecosystem";
+export type { RegisterParticipantInput, OnchainParticipantIdentity } from "./application/modules/pact-id";
+export type {
+  CreateMissionInput,
+  AppendExecutionStepInput,
+  SubmitEvidenceBundleInput,
+  RecordVerdictInput,
+  OpenMissionChallengeInput,
+  ResolveMissionChallengeInput,
+  ChallengeStakePolicy,
+  PactMissionsOptions,
+} from "./application/modules/pact-missions";
+export type { SettlementResult } from "./application/modules/pact-pay";
+export type { PublishPluginInput, PluginListingView } from "./application/modules/pact-plugin-marketplace";
+export type { PactSecurityOptions, SybilResistanceAssessment } from "./application/modules/pact-security";
+export type { CreateTaskInput } from "./application/modules/pact-tasks";
+export type { FormalPropertyVerificationResult } from "./application/modules/pact-zk";
