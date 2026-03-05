@@ -10,8 +10,24 @@ import type { AntiSpamAction } from "../domain/anti-spam";
 import type { DataCategory } from "../domain/data-marketplace";
 import type { DisputeStatus } from "../domain/dispute-resolution";
 import type { ReputationCategory } from "../domain/reputation-multi";
+import { getApplicableRoles, getParticipantCategory, isParticipantType } from "../domain/participant-matrix";
+import {
+  canPerformAction,
+  getRoleCapabilities,
+  getRoleRequirements,
+  isRoleModule,
+  parseParticipantRole,
+} from "../domain/role-matrix";
 import type { ValidationConfig } from "../domain/validation-pipeline";
 import type { TaskEvidence } from "../domain/types";
+import {
+  TOKENOMICS_MODEL,
+  calculateBurnRate,
+  calculateCirculatingSupply,
+  calculateStakingAPY,
+  getDistribution,
+  projectTokenSupply,
+} from "../domain/token-economics";
 import { InMemoryApiKeyStore } from "../infrastructure/api/in-memory-api-key-store";
 import { InMemoryMetricsRegistry } from "../observability/metrics";
 import { InMemoryTracer } from "../observability/tracing";
@@ -401,6 +417,77 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
         typeof limit === "number" && Number.isFinite(limit) ? limit : undefined,
       ),
     );
+  });
+
+  app.get("/roles/:role/capabilities", async (c) => {
+    const role = parseParticipantRole(c.req.param("role"));
+    if (!role) {
+      throw new HTTPException(400, { message: "Invalid role" });
+    }
+
+    return c.json({
+      role,
+      capabilities: getRoleCapabilities(role),
+    });
+  });
+
+  app.get("/roles/:role/requirements", async (c) => {
+    const role = parseParticipantRole(c.req.param("role"));
+    if (!role) {
+      throw new HTTPException(400, { message: "Invalid role" });
+    }
+
+    return c.json({
+      role,
+      requirements: getRoleRequirements(role),
+    });
+  });
+
+  app.post("/roles/check-action", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const role = parseParticipantRole(body.role ? String(body.role) : undefined);
+    if (!role) {
+      throw new HTTPException(400, { message: "Invalid role" });
+    }
+
+    const moduleValue = body.module ? String(body.module) : "";
+    if (!moduleValue) {
+      throw new HTTPException(400, { message: "module is required" });
+    }
+    if (!isRoleModule(moduleValue)) {
+      throw new HTTPException(400, { message: "Invalid role module" });
+    }
+
+    const action = body.action ? String(body.action) : "";
+    if (!action) {
+      throw new HTTPException(400, { message: "action is required" });
+    }
+
+    return c.json({
+      role,
+      module: moduleValue,
+      action,
+      allowed: canPerformAction(role, action, moduleValue),
+    });
+  });
+
+  app.post("/participants/matrix/category", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const type = body.type ? String(body.type) : "";
+    if (!isParticipantType(type)) {
+      throw new HTTPException(400, { message: "Invalid participant type" });
+    }
+    if (typeof body.isAgent !== "boolean") {
+      throw new HTTPException(400, { message: "isAgent must be a boolean" });
+    }
+
+    const category = getParticipantCategory(type, body.isAgent);
+    return c.json({
+      type,
+      isAgent: body.isAgent,
+      category,
+      applicableRoles: getApplicableRoles(category),
+    });
   });
 
   app.post("/id/participants", async (c) => {
@@ -1093,6 +1180,72 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
 
   app.get("/data/marketplace/stats", async (c) => {
     return c.json(await container.pactData.getMarketplaceStats());
+  });
+
+  app.get("/economics/token/distribution", async (c) => {
+    const distribution = getDistribution();
+    const totalAllocated = distribution.reduce((sum, allocation) => sum + allocation.allocationAmount, 0);
+    return c.json({
+      token: TOKENOMICS_MODEL.token,
+      distribution,
+      totalAllocated,
+    });
+  });
+
+  app.get("/economics/token/supply", async (c) => {
+    const monthsQuery = c.req.query("months");
+    const months = monthsQuery === undefined ? 12 : Number(monthsQuery);
+    if (!Number.isInteger(months) || months < 1 || months > 120) {
+      throw new HTTPException(400, {
+        message: "months must be an integer between 1 and 120",
+      });
+    }
+
+    const asOf = Date.now();
+    return c.json({
+      token: TOKENOMICS_MODEL.token,
+      asOf,
+      months,
+      circulatingSupply: calculateCirculatingSupply(asOf),
+      projections: projectTokenSupply(months),
+    });
+  });
+
+  app.post("/economics/token/apy", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const totalStaked = getRequiredNumberField(body, "totalStaked");
+    const emissionRate = getRequiredNumberField(body, "emissionRate");
+    if (totalStaked < 0 || emissionRate < 0) {
+      throw new HTTPException(400, {
+        message: "totalStaked and emissionRate must be non-negative numbers",
+      });
+    }
+
+    return c.json({
+      totalStaked,
+      emissionRate,
+      apy: calculateStakingAPY(totalStaked, emissionRate),
+    });
+  });
+
+  app.post("/economics/token/burn-rate", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const transactionVolume = getRequiredNumberField(body, "transactionVolume");
+    const burnPercent = getRequiredNumberField(body, "burnPercent");
+    if (transactionVolume < 0) {
+      throw new HTTPException(400, { message: "transactionVolume must be non-negative" });
+    }
+    if (burnPercent < 0 || burnPercent > 100) {
+      throw new HTTPException(400, { message: "burnPercent must be between 0 and 100" });
+    }
+
+    const burnedAmount = calculateBurnRate(transactionVolume, burnPercent);
+    return c.json({
+      transactionVolume,
+      burnPercent,
+      burnedAmount,
+      netVolume: transactionVolume - burnedAmount,
+    });
   });
 
   app.post("/economics/assets", async (c) => {

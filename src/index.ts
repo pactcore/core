@@ -123,6 +123,34 @@ export type {
   GasSponsorshipGrant,
 } from "./domain/payment-routing";
 export type {
+  PactApplication,
+  PactToken,
+  TokenDistribution,
+  VestingSchedule,
+  TokenomicsModel,
+  TokenSupplyProjection,
+} from "./domain/token-economics";
+export {
+  TOKENOMICS_MODEL,
+  calculateCirculatingSupply,
+  getDistribution,
+  calculateStakingAPY,
+  calculateBurnRate,
+  projectTokenSupply,
+} from "./domain/token-economics";
+export type {
+  FeeAppType,
+  VolumeTier,
+  FeeStructure,
+  RevenueShare,
+} from "./domain/fee-model";
+export {
+  FEE_STRUCTURES,
+  calculateFee,
+  getRevenueShare,
+  getFeeStructure,
+} from "./domain/fee-model";
+export type {
   MetaTransaction,
   X402PaymentRequest,
   X402PaymentReceipt,
@@ -132,6 +160,35 @@ export type {
 } from "./domain/x402-protocol";
 export { X402Relayer } from "./infrastructure/payment/x402-relayer";
 export { CapabilityPolicyEngine, recommendedCapabilityPolicy } from "./domain/capability-policy";
+export {
+  ParticipantRole,
+  getRoleCapabilities,
+  canPerformAction,
+  getRoleRequirements,
+  isRoleModule,
+  parseParticipantRole,
+  type RoleModule,
+  type RoleCapabilityActionMap,
+  type RoleCapabilityMatrix,
+  type RoleRequirements,
+} from "./domain/role-matrix";
+export {
+  ParticipantCategory,
+  getParticipantCategory,
+  getApplicableRoles,
+  isParticipantType,
+  isParticipantCategory,
+  type ParticipantType,
+  type ParticipantMatrixCell,
+} from "./domain/participant-matrix";
+export {
+  selectVerificationLayers,
+  calculateVerificationCost,
+  isVerificationLayer,
+  isVerificationRiskLevel,
+  type VerificationLayer,
+  type VerificationRiskLevel,
+} from "./domain/multi-layer-verification";
 export {
   DEFAULT_LEVEL_CONFIG,
   determineLevel,
@@ -181,6 +238,22 @@ export {
   verifyZeroKnowledge,
   verifyFormalSecurityProperties,
 } from "./domain/zk-formal-verification";
+export {
+  runPrivacyExperiment,
+  measureInformationLeakage,
+  calculatePrivacyScore,
+  type PrivacyLevel,
+  type PrivacyProofSetting,
+  type PrivacyExperimentConfig,
+  type PrivacyExperimentObservation,
+  type PrivacyExperimentResult,
+} from "./domain/zk-privacy-experiment";
+export {
+  addNoise,
+  calculatePrivacyBudget,
+  compositionTheorem,
+  type DPMechanism,
+} from "./domain/differential-privacy";
 export {
   validateCompensationModel,
   groupCompensationByAsset,
