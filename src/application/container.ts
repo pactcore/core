@@ -17,6 +17,8 @@ import { InMemoryDurableSettlementRecordRepository } from "../infrastructure/rep
 import { InMemoryTaskRepository } from "../infrastructure/repositories/in-memory-task-repository";
 import { InMemoryWorkerRepository } from "../infrastructure/repositories/in-memory-worker-repository";
 import { InMemoryReputationService } from "../infrastructure/reputation/in-memory-reputation-service";
+import { InMemoryReputationProfileRepository } from "../infrastructure/reputation/in-memory-reputation-profile-repository";
+import { InMemoryReputationEventRepository } from "../infrastructure/reputation/in-memory-reputation-event-repository";
 import { InMemoryScheduler } from "../infrastructure/scheduler/in-memory-scheduler";
 import { InMemoryTaskManager } from "../infrastructure/task-manager/in-memory-task-manager";
 import { InMemoryValidatorConsensus } from "../infrastructure/validator-consensus/in-memory-validator-consensus";
@@ -54,11 +56,13 @@ import { PactMissions } from "./modules/pact-missions";
 import { PactPay } from "./modules/pact-pay";
 import { PactTasks } from "./modules/pact-tasks";
 import { PactZK } from "./modules/pact-zk";
+import { PactReputation } from "./modules/pact-reputation";
 
 export interface PactContainer {
   pactCompute: PactCompute;
   pactTasks: PactTasks;
   pactPay: PactPay;
+  pactReputation: PactReputation;
   pactID: PactID;
   pactZK: PactZK;
   pactData: PactData;
@@ -126,6 +130,8 @@ export function createContainer(
   const scheduler = new InMemoryScheduler();
   const heartbeatSupervisor = new InMemoryHeartbeatSupervisor(scheduler);
   const reputationService = new InMemoryReputationService(reputationRepository);
+  const reputationProfileRepository = new InMemoryReputationProfileRepository();
+  const reputationEventRepository = new InMemoryReputationEventRepository();
   const validatorConsensus = new InMemoryValidatorConsensus(config);
   const blockchain = new InMemoryBaseChainGateway();
   const x402Adapter = new InMemoryX402PaymentAdapter();
@@ -152,6 +158,7 @@ export function createContainer(
   const templateRepository = new InMemoryTemplateRepository();
 
   const pactPay = new PactPay(blockchain, x402Adapter);
+  const pactReputation = new PactReputation(reputationProfileRepository, reputationEventRepository);
   const pactID = new PactID(
     participantRepository,
     workerRepository,
@@ -222,6 +229,7 @@ export function createContainer(
     pactCompute,
     pactTasks,
     pactPay,
+    pactReputation,
     pactID,
     pactZK,
     pactData,

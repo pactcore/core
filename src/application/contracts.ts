@@ -8,9 +8,20 @@ import type {
   TaskStatus,
   WorkerProfile,
 } from "../domain/types";
+import type {
+  ReputationCategory,
+  ReputationEvent,
+  ReputationProfile,
+} from "../domain/reputation-multi";
 import type { ValidationOutcome } from "../domain/validation-pipeline";
 import type { ZKProof, ZKProofRequest, ZKProofType } from "../domain/zk-proofs";
 import type { EscrowAccount } from "../blockchain/abstraction";
+import type {
+  CreditLine,
+  GasSponsorshipGrant,
+  MicropaymentBatch,
+  PaymentRoute,
+} from "../domain/payment-routing";
 
 export interface TaskRepository {
   save(task: Task): Promise<void>;
@@ -89,6 +100,18 @@ export interface WorkerRepository {
 export interface ReputationRepository {
   save(record: ReputationRecord): Promise<void>;
   get(participantId: string): Promise<ReputationRecord | undefined>;
+}
+
+export interface ReputationProfileRepository {
+  save(profile: ReputationProfile): Promise<void>;
+  get(participantId: string): Promise<ReputationProfile | undefined>;
+  list(): Promise<ReputationProfile[]>;
+}
+
+export interface ReputationEventRepository {
+  save(event: ReputationEvent): Promise<void>;
+  getByParticipant(participantId: string, limit?: number): Promise<ReputationEvent[]>;
+  getByCategory(category: ReputationCategory, limit?: number): Promise<ReputationEvent[]>;
 }
 
 export interface ReputationService {
@@ -217,6 +240,41 @@ export interface BlockchainGateway {
   createEscrow(taskId: string, payerId: string, amountCents: number): Promise<EscrowAccount>;
   releaseEscrow(taskId: string, payouts: Record<string, number>): Promise<string>;
   getEscrow(taskId: string): Promise<EscrowAccount | undefined>;
+}
+
+export interface PaymentRouter {
+  route(
+    fromId: string,
+    toId: string,
+    amount: number,
+    currency: string,
+    reference: string,
+  ): Promise<PaymentRoute>;
+}
+
+export interface MicropaymentAggregator {
+  addEntry(payerId: string, payeeId: string, amountCents: number): Promise<void>;
+  flush(payerId: string): Promise<MicropaymentBatch>;
+}
+
+export interface CreditLineManager {
+  open(
+    issuerId: string,
+    borrowerId: string,
+    limitCents: number,
+    interestBps: number,
+    expiresAt?: number,
+  ): Promise<CreditLine>;
+  use(lineId: string, amountCents: number): Promise<CreditLine>;
+  repay(lineId: string, amountCents: number): Promise<CreditLine>;
+  getLine(lineId: string): Promise<CreditLine | undefined>;
+  listByBorrower(borrowerId: string): Promise<CreditLine[]>;
+}
+
+export interface GasSponsorshipManager {
+  grant(sponsorId: string, beneficiaryId: string, maxGasCents: number): Promise<GasSponsorshipGrant>;
+  useGas(grantId: string, gasCents: number): Promise<GasSponsorshipGrant>;
+  getGrant(grantId: string): Promise<GasSponsorshipGrant | undefined>;
 }
 
 // ── PactCompute contracts ──────────────────────────────────────

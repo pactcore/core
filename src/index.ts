@@ -1,5 +1,23 @@
 export { createApp } from "./api/app";
 export { createContainer } from "./application/container";
+export type { ContractAddresses } from "./blockchain/contract-abis";
+export {
+  PACT_ESCROW_ABI,
+  PACT_IDENTITY_SBT_ABI,
+  PACT_STAKING_ABI,
+  PACT_PAY_ROUTER_ABI,
+} from "./blockchain/contract-abis";
+export {
+  functionSelector,
+  functionSelectorFromSignature,
+  encodeFunction,
+  decodeFunctionResult,
+  encodeValueWord,
+  keccak256Hex,
+  type AbiType,
+} from "./blockchain/abi-encoder";
+export { EvmBlockchainGateway, MockRpcProvider } from "./blockchain/evm-gateway";
+export { MockRpcProvider as InfrastructureMockRpcProvider } from "./infrastructure/blockchain/mock-rpc-provider";
 export { TaskStateMachine } from "./domain/task-state-machine";
 export { MissionStateMachine } from "./domain/mission-state-machine";
 export {
@@ -11,8 +29,48 @@ export {
 } from "./domain/challenge-stake";
 export { ThreeLayerValidationPipeline } from "./domain/validation-pipeline";
 export { ReputationModel } from "./domain/reputation";
+export {
+  calculateOverallScore,
+  applyTimeDecay,
+  determineReputationLevel,
+  clampReputationScore,
+  createDefaultDimensions,
+  reputationCategories,
+  type ReputationCategory,
+  type ReputationDimension,
+  type ReputationProfile,
+  type ReputationEvent,
+  type ReputationLevel,
+} from "./domain/reputation-multi";
 export { GaleShapleyMatcher } from "./domain/matching";
+export {
+  FirstPriceAuction,
+  VickreyAuction,
+  type AuctionBid,
+  type AuctionResult,
+  type AuctionMechanism,
+} from "./domain/auction";
+export {
+  CollusionDetector,
+  calculateCollusionCost,
+  type CollusionSignal,
+  type CollusionCostAnalysis,
+  type CollusionDetectorConfig,
+} from "./domain/collusion-detection";
+export {
+  MultiDimensionalMatcher,
+  DEFAULT_MATCH_WEIGHTS,
+  type MatchScore,
+  type MatchWeights,
+} from "./domain/multi-dimensional-matching";
 export { PaymentSplitService } from "./domain/payment-split";
+export type {
+  PaymentRoute,
+  MicropaymentBatch,
+  MicropaymentBatchEntry,
+  CreditLine,
+  GasSponsorshipGrant,
+} from "./domain/payment-routing";
 export { CapabilityPolicyEngine, recommendedCapabilityPolicy } from "./domain/capability-policy";
 export {
   DEFAULT_LEVEL_CONFIG,
@@ -56,14 +114,26 @@ export type {
   SettlementRecordReplayPage,
   SettlementRecordRepository,
 } from "./application/settlement-records";
+export type {
+  PaymentRouter,
+  MicropaymentAggregator,
+  CreditLineManager,
+  GasSponsorshipManager,
+} from "./application/contracts";
 export { InMemoryHeartbeatSupervisor } from "./infrastructure/heartbeat/in-memory-heartbeat-supervisor";
 export { FileBackedEventJournal } from "./infrastructure/event-bus/file-backed-event-journal";
+export { InMemoryPaymentRouter } from "./infrastructure/payment/in-memory-payment-router";
+export { InMemoryMicropaymentAggregator } from "./infrastructure/payment/in-memory-micropayment-aggregator";
+export { InMemoryCreditLineManager } from "./infrastructure/payment/in-memory-credit-line-manager";
+export { InMemoryGasSponsorshipManager } from "./infrastructure/payment/in-memory-gas-sponsorship-manager";
 export { InMemoryLlmTokenMeteringConnector } from "./infrastructure/settlement/in-memory-llm-token-metering-connector";
 export { InMemoryCloudCreditBillingConnector } from "./infrastructure/settlement/in-memory-cloud-credit-billing-connector";
 export { InMemoryApiQuotaAllocationConnector } from "./infrastructure/settlement/in-memory-api-quota-allocation-connector";
 export { InMemoryDurableSettlementRecordRepository } from "./infrastructure/repositories/in-memory-durable-settlement-record-repository";
 export { FileBackedDurableSettlementRecordRepository } from "./infrastructure/repositories/file-backed-durable-settlement-record-repository";
 export { FileBackedMissionRepository } from "./infrastructure/repositories/file-backed-mission-repository";
+export { InMemoryReputationProfileRepository } from "./infrastructure/reputation/in-memory-reputation-profile-repository";
+export { InMemoryReputationEventRepository } from "./infrastructure/reputation/in-memory-reputation-event-repository";
 
 // PactCompute infrastructure
 export { InMemoryComputeProviderRegistry } from "./infrastructure/compute/in-memory-compute-provider-registry";
@@ -116,3 +186,4 @@ export { PactID } from "./application/modules/pact-id";
 export { PactTasks } from "./application/modules/pact-tasks";
 export { PactPay } from "./application/modules/pact-pay";
 export { PactZK } from "./application/modules/pact-zk";
+export { PactReputation } from "./application/modules/pact-reputation";

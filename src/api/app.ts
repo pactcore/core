@@ -1,10 +1,15 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { createApiKeyAuth } from "./middleware/api-key-auth";
+import { createRateLimiter } from "./middleware/rate-limiter";
+import { createUsageTracker, UsageTracker } from "./middleware/usage-tracker";
 import { createContainer } from "../application/container";
 import { ParticipantNotFoundError } from "../application/modules/pact-id";
 import type { DataCategory } from "../domain/data-marketplace";
+import type { ReputationCategory } from "../domain/reputation-multi";
 import type { ValidationConfig } from "../domain/validation-pipeline";
 import type { TaskEvidence } from "../domain/types";
+import { InMemoryApiKeyStore } from "../infrastructure/api/in-memory-api-key-store";
 import type {
   ZKCompletionClaim,
   ZKIdentityClaim,
@@ -12,11 +17,146 @@ import type {
   ZKReputationClaim,
 } from "../domain/zk-proofs";
 
-export function createApp(validationConfig?: ValidationConfig) {
+export interface CreateAppOptions {
+  enforceApiKeyAuth?: boolean;
+  rateLimit?: {
+    windowMs?: number;
+    maxRequests?: number;
+  };
+}
+
+export function createApp(validationConfig?: ValidationConfig, options: CreateAppOptions = {}) {
   const container = createContainer(validationConfig);
   const app = new Hono();
+  const apiKeyStore = new InMemoryApiKeyStore();
+  const usageTracker = new UsageTracker();
+  const shouldRequireApiKey = () => options.enforceApiKeyAuth === true || apiKeyStore.hasKeys();
+
+  app.use(
+    "*",
+    createRateLimiter({
+      windowMs: options.rateLimit?.windowMs ?? 60_000,
+      maxRequests: options.rateLimit?.maxRequests ?? 100,
+    }),
+  );
+  app.use("*", createUsageTracker(usageTracker));
+
+  const apiKeyAuth = createApiKeyAuth({
+    validator: async (key) => apiKeyStore.validateKey(key),
+  });
+
+  app.use("*", async (c, next) => {
+    if (c.req.path === "/health") {
+      return next();
+    }
+
+    if (!shouldRequireApiKey()) {
+      return next();
+    }
+
+    return apiKeyAuth(c, next);
+  });
 
   app.get("/health", (c) => c.json({ ok: true, service: "pact-network-core-bun" }));
+
+  app.post("/admin/api-keys", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const ownerId = body.ownerId ? String(body.ownerId) : "";
+    if (!ownerId) {
+      throw new HTTPException(400, { message: "ownerId is required" });
+    }
+
+    const permissions = Array.isArray(body.permissions) ? body.permissions.map(String) : [];
+    const rateLimit =
+      typeof body.rateLimit === "number" && Number.isFinite(body.rateLimit) && body.rateLimit > 0
+        ? Math.floor(body.rateLimit)
+        : undefined;
+    const registered = apiKeyStore.registerKey(ownerId, permissions, rateLimit);
+    return c.json(registered, 201);
+  });
+
+  app.get("/admin/api-keys", async (c) => {
+    const ownerId = c.req.query("ownerId");
+    if (!ownerId) {
+      throw new HTTPException(400, { message: "ownerId query parameter is required" });
+    }
+
+    return c.json(apiKeyStore.listKeys(ownerId));
+  });
+
+  app.delete("/admin/api-keys/:id", async (c) => {
+    const revoked = apiKeyStore.revokeKey(c.req.param("id"));
+    if (!revoked) {
+      throw new HTTPException(404, { message: "API key not found" });
+    }
+
+    return c.body(null, 204);
+  });
+
+  app.get("/admin/usage", async (c) => {
+    const apiKeyId = c.req.query("apiKeyId");
+    if (!apiKeyId) {
+      throw new HTTPException(400, { message: "apiKeyId query parameter is required" });
+    }
+
+    return c.json(usageTracker.getStats(apiKeyId));
+  });
+
+  app.get("/admin/usage/overall", async (c) => {
+    return c.json(usageTracker.getOverallStats());
+  });
+
+  app.get("/reputation/leaderboard", async (c) => {
+    const category = c.req.query("category");
+    if (category && !isReputationCategory(category)) {
+      throw new HTTPException(400, { message: "Invalid reputation category" });
+    }
+
+    const limitValue = c.req.query("limit");
+    const limit = limitValue ? Number(limitValue) : undefined;
+    const leaderboard = await container.pactReputation.getLeaderboard(
+      category,
+      typeof limit === "number" && Number.isFinite(limit) ? limit : undefined,
+    );
+    return c.json(leaderboard);
+  });
+
+  app.get("/reputation/:participantId", async (c) => {
+    return c.json(await container.pactReputation.getProfile(c.req.param("participantId")));
+  });
+
+  app.post("/reputation/:participantId/events", async (c) => {
+    const body = await c.req.json();
+    const category = body.category ? String(body.category) : "";
+    if (!isReputationCategory(category)) {
+      throw new HTTPException(400, { message: "Invalid reputation category" });
+    }
+
+    const delta = Number(body.delta);
+    if (!Number.isFinite(delta)) {
+      throw new HTTPException(400, { message: "Invalid delta value" });
+    }
+
+    const profile = await container.pactReputation.recordEvent(
+      c.req.param("participantId"),
+      category,
+      delta,
+      body.reason ? String(body.reason) : "unspecified",
+    );
+
+    return c.json(profile, 201);
+  });
+
+  app.get("/reputation/:participantId/history", async (c) => {
+    const limitValue = c.req.query("limit");
+    const limit = limitValue ? Number(limitValue) : undefined;
+    return c.json(
+      await container.pactReputation.getHistory(
+        c.req.param("participantId"),
+        typeof limit === "number" && Number.isFinite(limit) ? limit : undefined,
+      ),
+    );
+  });
 
   app.post("/id/participants", async (c) => {
     const body = await c.req.json();
@@ -208,6 +348,92 @@ export function createApp(validationConfig?: ValidationConfig) {
   app.get("/tasks/:id", async (c) => {
     const task = await container.pactTasks.getTask(c.req.param("id"));
     return c.json(task);
+  });
+
+  app.post("/pay/route", async (c) => {
+    const body = await c.req.json();
+    const route = await container.pactPay.routePayment(
+      body.fromId ? String(body.fromId) : body.from ? String(body.from) : "",
+      body.toId ? String(body.toId) : body.to ? String(body.to) : "",
+      typeof body.amount === "number"
+        ? body.amount
+        : typeof body.amountCents === "number"
+          ? body.amountCents
+          : Number(body.amount),
+      body.currency ? String(body.currency) : "USD",
+      body.reference ? String(body.reference) : body.ref ? String(body.ref) : "",
+    );
+    return c.json(route, 201);
+  });
+
+  app.get("/pay/routes", async (c) => {
+    return c.json(await container.pactPay.listRoutes());
+  });
+
+  app.post("/pay/micropayments", async (c) => {
+    const body = await c.req.json();
+    await container.pactPay.addMicropayment(
+      body.payerId ? String(body.payerId) : "",
+      body.payeeId ? String(body.payeeId) : "",
+      typeof body.amountCents === "number" ? body.amountCents : Number(body.amount),
+    );
+    return c.json({ accepted: true }, 201);
+  });
+
+  app.post("/pay/micropayments/flush", async (c) => {
+    const body = await c.req.json();
+    const batch = await container.pactPay.flushMicropayments(
+      body.payerId ? String(body.payerId) : "",
+    );
+    return c.json(batch);
+  });
+
+  app.post("/pay/credit-lines", async (c) => {
+    const body = await c.req.json();
+    const line = await container.pactPay.openCreditLine(
+      body.issuerId ? String(body.issuerId) : "",
+      body.borrowerId ? String(body.borrowerId) : "",
+      Number(body.limitCents),
+      Number(body.interestBps),
+    );
+    return c.json(line, 201);
+  });
+
+  app.post("/pay/credit-lines/:id/use", async (c) => {
+    const body = await c.req.json();
+    const line = await container.pactPay.useCreditLine(
+      c.req.param("id"),
+      typeof body.amountCents === "number" ? body.amountCents : Number(body.amount),
+    );
+    return c.json(line);
+  });
+
+  app.post("/pay/credit-lines/:id/repay", async (c) => {
+    const body = await c.req.json();
+    const line = await container.pactPay.repayCreditLine(
+      c.req.param("id"),
+      typeof body.amountCents === "number" ? body.amountCents : Number(body.amount),
+    );
+    return c.json(line);
+  });
+
+  app.post("/pay/gas-sponsorship", async (c) => {
+    const body = await c.req.json();
+    const grant = await container.pactPay.grantGasSponsorship(
+      body.sponsorId ? String(body.sponsorId) : "",
+      body.beneficiaryId ? String(body.beneficiaryId) : "",
+      Number(body.maxGasCents),
+    );
+    return c.json(grant, 201);
+  });
+
+  app.post("/pay/gas-sponsorship/:id/use", async (c) => {
+    const body = await c.req.json();
+    const grant = await container.pactPay.useGasSponsorship(
+      c.req.param("id"),
+      typeof body.gasCents === "number" ? body.gasCents : Number(body.gas),
+    );
+    return c.json(grant);
   });
 
   app.get("/payments/ledger", async (c) => {
@@ -682,6 +908,16 @@ function isDataCategory(value?: string): value is DataCategory {
     value === "sensor" ||
     value === "labeled" ||
     value === "other"
+  );
+}
+
+function isReputationCategory(value?: string): value is ReputationCategory {
+  return (
+    value === "task_completion" ||
+    value === "verification_accuracy" ||
+    value === "payment_reliability" ||
+    value === "responsiveness" ||
+    value === "skill_expertise"
   );
 }
 
