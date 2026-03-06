@@ -329,9 +329,15 @@ export { PactAntiSpam } from "./application/modules/pact-anti-spam";
 export { PactSecurity } from "./application/modules/pact-security";
 export { PactAnalytics } from "./application/modules/pact-analytics";
 export { PactEcosystem } from "./application/modules/pact-ecosystem";
+export { PactReconciliation } from "./application/modules/pact-reconciliation";
 export type {
+  ManagedSettlementConnector,
+  SettlementConnectorFailure,
+  SettlementConnectorHealth,
+  SettlementConnectorHealthState,
   SettlementConnectorRequest,
   SettlementConnectorResult,
+  SettlementConnectorRetryPolicy,
   LlmTokenMeteringConnector,
   CloudCreditBillingConnector,
   ApiQuotaAllocationConnector,
@@ -365,6 +371,8 @@ export { InMemoryApiQuotaAllocationConnector } from "./infrastructure/settlement
 export { InMemoryDurableSettlementRecordRepository } from "./infrastructure/repositories/in-memory-durable-settlement-record-repository";
 export { FileBackedDurableSettlementRecordRepository } from "./infrastructure/repositories/file-backed-durable-settlement-record-repository";
 export { FileBackedMissionRepository } from "./infrastructure/repositories/file-backed-mission-repository";
+export { FileBackedParticipantRepository } from "./infrastructure/repositories/file-backed-participant-repository";
+export { FileBackedTaskRepository } from "./infrastructure/repositories/file-backed-task-repository";
 export { InMemoryDisputeRepository } from "./infrastructure/repositories/in-memory-dispute-repository";
 export { SQLiteTaskRepository } from "./infrastructure/repositories/sqlite-task-repository";
 export { SQLiteParticipantRepository } from "./infrastructure/repositories/sqlite-participant-repository";
@@ -479,6 +487,7 @@ export type {
   CompensationQuote,
   ValuationQuote,
   AssetSettlementLine,
+  ConnectorHealthReport,
   SettlementPlan,
   ExecuteSettlementInput,
   SettlementExecutionResult,
@@ -489,6 +498,11 @@ export type {
   PactEconomicsOptions,
 } from "./application/modules/pact-economics";
 export type { PactEcosystemOptions } from "./application/modules/pact-ecosystem";
+export type {
+  PactReconciliationOptions,
+  ReconciliationCycleResult,
+  UnreconciledSettlementView,
+} from "./application/modules/pact-reconciliation";
 export type { RegisterParticipantInput, OnchainParticipantIdentity } from "./application/modules/pact-id";
 export type {
   CreateMissionInput,

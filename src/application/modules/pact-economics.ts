@@ -1,6 +1,8 @@
 import type { EventBus } from "../contracts";
 import { DomainEvents } from "../events";
 import type {
+  ManagedSettlementConnector,
+  SettlementConnectorHealth,
   SettlementConnectorRequest,
   SettlementConnectors,
 } from "../settlement-connectors";
@@ -75,12 +77,19 @@ export interface SettlementPlan {
 export interface ExecuteSettlementInput {
   model: CompensationModel;
   settlementId?: string;
+  idempotencyKey?: string;
 }
 
 export interface SettlementExecutionResult {
   settlementId: string;
   executedAt: number;
   records: SettlementRecord[];
+  idempotencyKey?: string;
+}
+
+export interface ConnectorHealthReport extends SettlementConnectorHealth {
+  connector: SettlementRecord["connector"];
+  rail: SettlementRecord["rail"];
 }
 
 export type ListSettlementRecordsFilter = SettlementRecordQueryFilter;
@@ -109,6 +118,8 @@ export interface PactEconomicsOptions {
 export class PactEconomics {
   private readonly assets = new Map<string, CompensationAsset>();
   private readonly valuations = new Map<string, ValuationRecord>();
+  private readonly executionFingerprints = new Map<string, string>();
+  private readonly executionResults = new Map<string, SettlementExecutionResult>();
   private readonly settlementRecordRepository: SettlementRecordRepository;
   private readonly eventBus?: EventBus;
   private readonly settlementConnectors?: Partial<SettlementConnectors>;
@@ -271,6 +282,22 @@ export class PactEconomics {
     }
 
     const settlementId = input.settlementId ?? generateId("settlement");
+    const executionFingerprint = this.createExecutionFingerprint(settlementId, input.model);
+
+    if (input.idempotencyKey) {
+      const existingFingerprint = this.executionFingerprints.get(input.idempotencyKey);
+      if (existingFingerprint && existingFingerprint !== executionFingerprint) {
+        throw new Error(`idempotency key reuse with different settlement payload: ${input.idempotencyKey}`);
+      }
+
+      const existingResult = this.executionResults.get(input.idempotencyKey);
+      if (existingResult) {
+        return this.cloneExecutionResult(existingResult);
+      }
+
+      this.executionFingerprints.set(input.idempotencyKey, executionFingerprint);
+    }
+
     const records: SettlementRecord[] = [];
     const legs = [...input.model.legs].sort((a, b) => a.id.localeCompare(b.id));
 
@@ -285,7 +312,17 @@ export class PactEconomics {
         continue;
       }
 
-      const recordId = generateId("settlement-record");
+      const recordId = input.idempotencyKey
+        ? this.createIdempotentRecordId(input.idempotencyKey, leg.id)
+        : generateId("settlement-record");
+      if (input.idempotencyKey) {
+        const existingRecord = await this.settlementRecordRepository.getById(recordId);
+        if (existingRecord) {
+          records.push(existingRecord);
+          continue;
+        }
+      }
+
       const request: SettlementConnectorRequest = {
         settlementId,
         recordId,
@@ -295,6 +332,9 @@ export class PactEconomics {
         payeeId: leg.payeeId,
         amount: leg.amount,
         unit: leg.unit,
+        idempotencyKey: input.idempotencyKey
+          ? this.createLegIdempotencyKey(input.idempotencyKey, leg.id)
+          : undefined,
       };
 
       const connectorResult = await this.applyConnectorByRail(rail, request);
@@ -323,11 +363,38 @@ export class PactEconomics {
     const executedAt = Date.now();
     await this.publishSettlementExecuted(settlementId, records.length, executedAt);
 
-    return {
+    const result: SettlementExecutionResult = {
       settlementId,
       executedAt,
       records,
+      idempotencyKey: input.idempotencyKey,
     };
+
+    if (input.idempotencyKey) {
+      this.executionResults.set(input.idempotencyKey, this.cloneExecutionResult(result));
+    }
+
+    return this.cloneExecutionResult(result);
+  }
+
+  getConnectorHealth(): ConnectorHealthReport[] {
+    return [
+      this.buildConnectorHealth(
+        "llm_metering",
+        "llm_token_metering",
+        this.settlementConnectors?.llmTokenMetering,
+      ),
+      this.buildConnectorHealth(
+        "cloud_billing",
+        "cloud_credit_billing",
+        this.settlementConnectors?.cloudCreditBilling,
+      ),
+      this.buildConnectorHealth(
+        "api_quota",
+        "api_quota_allocation",
+        this.settlementConnectors?.apiQuotaAllocation,
+      ),
+    ];
   }
 
   async listSettlementRecords(filter?: ListSettlementRecordsFilter): Promise<SettlementRecord[]> {
@@ -388,6 +455,11 @@ export class PactEconomics {
     return this.settlementRecordRepository.getById(recordId);
   }
 
+  async canReconcileSettlementRecord(record: SettlementRecord): Promise<boolean> {
+    const connector = this.getManagedConnector(record.connector);
+    return connector.hasExternalReference(record.externalReference);
+  }
+
   private valuationKey(assetId: string, referenceAssetId: string): string {
     return `${assetId}->${referenceAssetId}`;
   }
@@ -437,6 +509,102 @@ export class PactEconomics {
 
     const result = await this.settlementConnectors.apiQuotaAllocation.allocateQuota(request);
     return { connector: "api_quota_allocation", result };
+  }
+
+  private buildConnectorHealth(
+    rail: SettlementRecord["rail"],
+    connectorName: SettlementRecord["connector"],
+    connector: ManagedSettlementConnector | undefined,
+  ): ConnectorHealthReport {
+    if (!connector) {
+      return {
+        rail,
+        connector: connectorName,
+        state: "unhealthy",
+        retryPolicy: {
+          maxRetries: 0,
+          backoffMs: 0,
+        },
+        lastFailure: {
+          attempt: 0,
+          failedAt: Date.now(),
+          message: `missing connector: ${connectorName}`,
+          settlementId: "",
+          recordId: "",
+        },
+      };
+    }
+
+    return {
+      rail,
+      connector: connectorName,
+      ...connector.getHealth(),
+    };
+  }
+
+  private getManagedConnector(
+    connector: SettlementRecord["connector"],
+  ): ManagedSettlementConnector {
+    if (connector === "llm_token_metering") {
+      if (!this.settlementConnectors?.llmTokenMetering) {
+        throw new Error("missing connector: llmTokenMetering");
+      }
+      return this.settlementConnectors.llmTokenMetering;
+    }
+
+    if (connector === "cloud_credit_billing") {
+      if (!this.settlementConnectors?.cloudCreditBilling) {
+        throw new Error("missing connector: cloudCreditBilling");
+      }
+      return this.settlementConnectors.cloudCreditBilling;
+    }
+
+    if (!this.settlementConnectors?.apiQuotaAllocation) {
+      throw new Error("missing connector: apiQuotaAllocation");
+    }
+
+    return this.settlementConnectors.apiQuotaAllocation;
+  }
+
+  private createExecutionFingerprint(settlementId: string, model: CompensationModel): string {
+    return JSON.stringify({
+      settlementId,
+      mode: model.mode,
+      settlementWindowSec: model.settlementWindowSec,
+      metadata: model.metadata,
+      legs: [...model.legs]
+        .map((leg) => ({
+          id: leg.id,
+          payerId: leg.payerId,
+          payeeId: leg.payeeId,
+          assetId: leg.assetId,
+          amount: leg.amount,
+          unit: leg.unit,
+        }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+    });
+  }
+
+  private createIdempotentRecordId(idempotencyKey: string, legId: string): string {
+    return `settlement-record-${this.normalizeIdempotencyComponent(idempotencyKey)}-${this.normalizeIdempotencyComponent(legId)}`;
+  }
+
+  private createLegIdempotencyKey(idempotencyKey: string, legId: string): string {
+    return `${idempotencyKey}:${legId}`;
+  }
+
+  private normalizeIdempotencyComponent(value: string): string {
+    return value.replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 80);
+  }
+
+  private cloneExecutionResult(result: SettlementExecutionResult): SettlementExecutionResult {
+    return {
+      ...result,
+      records: result.records.map((record) => ({
+        ...record,
+        connectorMetadata: record.connectorMetadata ? { ...record.connectorMetadata } : undefined,
+      })),
+    };
   }
 
   private async publishSettlementRecordCreated(

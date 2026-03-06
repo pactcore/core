@@ -14,6 +14,7 @@ export interface SettlementConnectorRequest {
   payeeId: string;
   amount: number;
   unit: string;
+  idempotencyKey?: string;
 }
 
 export interface SettlementConnectorResult {
@@ -23,15 +24,42 @@ export interface SettlementConnectorResult {
   metadata?: Record<string, string>;
 }
 
-export interface LlmTokenMeteringConnector {
+export interface SettlementConnectorRetryPolicy {
+  maxRetries: number;
+  backoffMs: number;
+}
+
+export type SettlementConnectorHealthState = "healthy" | "degraded" | "unhealthy";
+
+export interface SettlementConnectorFailure {
+  attempt: number;
+  failedAt: number;
+  message: string;
+  settlementId: string;
+  recordId: string;
+  idempotencyKey?: string;
+}
+
+export interface SettlementConnectorHealth {
+  state: SettlementConnectorHealthState;
+  retryPolicy: SettlementConnectorRetryPolicy;
+  lastFailure?: SettlementConnectorFailure;
+}
+
+export interface ManagedSettlementConnector {
+  getHealth(): SettlementConnectorHealth;
+  hasExternalReference(externalReference: string): Promise<boolean>;
+}
+
+export interface LlmTokenMeteringConnector extends ManagedSettlementConnector {
   applyMeteringCredit(input: SettlementConnectorRequest): Promise<SettlementConnectorResult>;
 }
 
-export interface CloudCreditBillingConnector {
+export interface CloudCreditBillingConnector extends ManagedSettlementConnector {
   applyBillingCredit(input: SettlementConnectorRequest): Promise<SettlementConnectorResult>;
 }
 
-export interface ApiQuotaAllocationConnector {
+export interface ApiQuotaAllocationConnector extends ManagedSettlementConnector {
   allocateQuota(input: SettlementConnectorRequest): Promise<SettlementConnectorResult>;
 }
 

@@ -1305,11 +1305,25 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
 
   app.post("/economics/settlements/execute", async (c) => {
     const body = await c.req.json();
+    const idempotencyHeader = c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key");
     const result = await container.pactEconomics.executeSettlement({
       model: body.model,
       settlementId: body.settlementId ? String(body.settlementId) : undefined,
+      idempotencyKey: idempotencyHeader ?? (body.idempotencyKey ? String(body.idempotencyKey) : undefined),
     });
     return c.json(result, 201);
+  });
+
+  app.get("/economics/connectors/health", async (c) => {
+    return c.json(container.pactReconciliation.getConnectorHealth());
+  });
+
+  app.post("/economics/reconciliation/run", async (c) => {
+    return c.json(await container.pactReconciliation.runReconciliationCycle(), 201);
+  });
+
+  app.get("/economics/reconciliation/unreconciled", async (c) => {
+    return c.json(await container.pactReconciliation.listUnreconciledSettlements());
   });
 
   app.get("/economics/settlements/records", async (c) => {

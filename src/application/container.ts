@@ -12,6 +12,8 @@ import { InMemoryX402PaymentAdapter } from "../infrastructure/payment/in-memory-
 import { X402Relayer } from "../infrastructure/payment/x402-relayer";
 import { InMemoryHeartbeatSupervisor } from "../infrastructure/heartbeat/in-memory-heartbeat-supervisor";
 import { FileBackedMissionRepository } from "../infrastructure/repositories/file-backed-mission-repository";
+import { FileBackedParticipantRepository } from "../infrastructure/repositories/file-backed-participant-repository";
+import { FileBackedTaskRepository } from "../infrastructure/repositories/file-backed-task-repository";
 import { InMemoryDisputeRepository } from "../infrastructure/repositories/in-memory-dispute-repository";
 import { InMemoryMissionRepository } from "../infrastructure/repositories/in-memory-mission-repository";
 import { InMemoryParticipantRepository } from "../infrastructure/repositories/in-memory-participant-repository";
@@ -69,6 +71,7 @@ import { PactID } from "./modules/pact-id";
 import { PactMissions } from "./modules/pact-missions";
 import { PactDisputes } from "./modules/pact-disputes";
 import { PactPay } from "./modules/pact-pay";
+import { PactReconciliation } from "./modules/pact-reconciliation";
 import { PactSecurity } from "./modules/pact-security";
 import { PactTasks } from "./modules/pact-tasks";
 import { PactZK } from "./modules/pact-zk";
@@ -93,6 +96,7 @@ export interface PactContainer {
   pactDisputes: PactDisputes;
   pactHeartbeat: PactHeartbeat;
   pactEconomics: PactEconomics;
+  pactReconciliation: PactReconciliation;
   pactEcosystem: PactEcosystem;
   eventJournal: EventJournal;
   agentMailbox: InMemoryAgentMailbox;
@@ -100,6 +104,8 @@ export interface PactContainer {
 
 export interface PactContainerEnvironment {
   PACT_DB_FILE?: string;
+  PACT_TASK_STORE_FILE?: string;
+  PACT_PARTICIPANT_STORE_FILE?: string;
   PACT_MISSION_STORE_FILE?: string;
   PACT_SETTLEMENT_RECORD_STORE_FILE?: string;
   PACT_EVENT_JOURNAL_STORE_FILE?: string;
@@ -126,10 +132,14 @@ export function createContainer(
 ): PactContainer {
   const env = options.env ?? process.env;
   const dbFile = env.PACT_DB_FILE;
+  const taskStoreFile = env.PACT_TASK_STORE_FILE;
+  const participantStoreFile = env.PACT_PARTICIPANT_STORE_FILE;
 
-  const taskRepository = dbFile
-    ? new SQLiteTaskRepository({ filePath: dbFile })
-    : new InMemoryTaskRepository();
+  const taskRepository = taskStoreFile
+    ? new FileBackedTaskRepository({ filePath: taskStoreFile })
+    : dbFile
+      ? new SQLiteTaskRepository({ filePath: dbFile })
+      : new InMemoryTaskRepository();
   const missionStoreFile = env.PACT_MISSION_STORE_FILE;
   const missionRepository = missionStoreFile
     ? new FileBackedMissionRepository({
@@ -138,9 +148,11 @@ export function createContainer(
     : new InMemoryMissionRepository();
   const disputeRepository = new InMemoryDisputeRepository();
   const workerRepository = new InMemoryWorkerRepository();
-  const participantRepository = dbFile
-    ? new SQLiteParticipantRepository({ filePath: dbFile })
-    : new InMemoryParticipantRepository();
+  const participantRepository = participantStoreFile
+    ? new FileBackedParticipantRepository({ filePath: participantStoreFile })
+    : dbFile
+      ? new SQLiteParticipantRepository({ filePath: dbFile })
+      : new InMemoryParticipantRepository();
   const reputationRepository = dbFile
     ? new SQLiteReputationRepository({ filePath: dbFile })
     : new InMemoryReputationRepository();
@@ -294,6 +306,7 @@ export function createContainer(
       apiQuotaAllocation: new InMemoryApiQuotaAllocationConnector(),
     },
   });
+  const pactReconciliation = new PactReconciliation({ pactEconomics });
   const pactAnalytics = new PactAnalytics({
     pactAntiSpam,
     pactCompute,
@@ -342,6 +355,7 @@ export function createContainer(
     pactDisputes,
     pactHeartbeat,
     pactEconomics,
+    pactReconciliation,
     pactEcosystem,
     eventJournal,
     agentMailbox,
