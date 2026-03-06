@@ -22,6 +22,28 @@ export {
   MockRpcProvider,
 } from "./blockchain/evm-gateway";
 export { MockRpcProvider as InfrastructureMockRpcProvider } from "./infrastructure/blockchain/mock-rpc-provider";
+export {
+  MockEvmGovernanceBridge,
+  type CreateGovernanceProposalInput,
+  type ExecuteGovernanceProposalInput,
+  type GovernanceProposal,
+  type GovernanceProposalAction,
+  type GovernanceProposalStatus,
+  type GovernanceVoteChoice,
+  type GovernanceVoteRecord,
+  type VoteGovernanceProposalInput,
+} from "./domain/governance-bridge";
+export {
+  MockEvmRewardsBridge,
+  type EpochRewardDistribution,
+  type EpochRewardsSyncResult,
+  type ParticipantEpochReward,
+  type ParticipantRewardsSnapshot,
+  type RewardClaimStatus,
+  type RewardClaimUpdate,
+  type SyncEpochRewardsInput,
+  type SyncRewardClaimStatusInput,
+} from "./domain/rewards-bridge";
 export { TaskStateMachine } from "./domain/task-state-machine";
 export { MissionStateMachine } from "./domain/mission-state-machine";
 export {

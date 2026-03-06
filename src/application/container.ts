@@ -64,6 +64,7 @@ import { PactAntiSpam } from "./modules/pact-anti-spam";
 import { PactCompute } from "./modules/pact-compute";
 import { PactData } from "./modules/pact-data";
 import { PactDev } from "./modules/pact-dev";
+import { PactOnchain } from "./modules/pact-onchain";
 import { PactPluginMarketplace } from "./modules/pact-plugin-marketplace";
 import { PactEconomics } from "./modules/pact-economics";
 import { PactHeartbeat } from "./modules/pact-heartbeat";
@@ -91,6 +92,7 @@ export interface PactContainer {
   pactZK: PactZK;
   pactData: PactData;
   pactDev: PactDev;
+  pactOnchain: PactOnchain;
   pactPluginMarketplace: PactPluginMarketplace;
   pactMissions: PactMissions;
   pactDisputes: PactDisputes;
@@ -264,6 +266,7 @@ export function createContainer(
     dataPurchaseRepository,
   );
   const pactDev = new PactDev(policyRegistry, templateRepository);
+  const pactOnchain = new PactOnchain();
   const pactPluginMarketplace = new PactPluginMarketplace(
     pluginPackageRepository,
     pluginListingRepository,
@@ -350,6 +353,7 @@ export function createContainer(
     pactZK,
     pactData,
     pactDev,
+    pactOnchain,
     pactPluginMarketplace,
     pactMissions,
     pactDisputes,

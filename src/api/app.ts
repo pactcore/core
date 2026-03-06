@@ -4,6 +4,7 @@ import { createApiKeyAuth } from "./middleware/api-key-auth";
 import { createRateLimiter } from "./middleware/rate-limiter";
 import { createUsageTracker, UsageTracker } from "./middleware/usage-tracker";
 import { createContainer } from "../application/container";
+import type { PactContainer } from "../application/container";
 import { ParticipantNotFoundError } from "../application/modules/pact-id";
 import type { AnalyticsPeriod } from "../application/modules/pact-analytics";
 import type { AntiSpamAction } from "../domain/anti-spam";
@@ -40,6 +41,7 @@ import type {
 } from "../domain/zk-proofs";
 
 export interface CreateAppOptions {
+  container?: PactContainer;
   enforceApiKeyAuth?: boolean;
   antiSpamEnabled?: boolean;
   rateLimit?: {
@@ -49,7 +51,7 @@ export interface CreateAppOptions {
 }
 
 export function createApp(validationConfig?: ValidationConfig, options: CreateAppOptions = {}) {
-  const container = createContainer(validationConfig);
+  const container = options.container ?? createContainer(validationConfig);
   const app = new Hono();
   const observabilityStartedAt = Date.now();
   const metricsRegistry = new InMemoryMetricsRegistry();
@@ -1392,6 +1394,105 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(record);
   });
 
+  app.post("/governance/proposals", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const proposal = await container.pactOnchain.createGovernanceProposal({
+      proposerId: body.proposerId ? String(body.proposerId) : "",
+      title: body.title ? String(body.title) : "",
+      description: body.description ? String(body.description) : "",
+      quorum:
+        typeof body.quorum === "number" && Number.isFinite(body.quorum)
+          ? Math.floor(body.quorum)
+          : undefined,
+      votingStartsAt:
+        typeof body.votingStartsAt === "number" && Number.isFinite(body.votingStartsAt)
+          ? Math.floor(body.votingStartsAt)
+          : undefined,
+      votingEndsAt: getRequiredNumberField(body, "votingEndsAt"),
+      actions: Array.isArray(body.actions)
+        ? body.actions.map((action: unknown) => {
+            const payload = action && typeof action === "object"
+              ? (action as Record<string, unknown>)
+              : {};
+            return {
+              target: payload.target ? String(payload.target) : "",
+              signature: payload.signature ? String(payload.signature) : "",
+              calldata: payload.calldata ? String(payload.calldata) : "0x",
+              value:
+                typeof payload.value === "number" && Number.isFinite(payload.value)
+                  ? Math.floor(payload.value)
+                  : 0,
+              description: payload.description ? String(payload.description) : undefined,
+            };
+          })
+        : [],
+    });
+    return c.json(proposal, 201);
+  });
+
+  app.post("/governance/proposals/:id/vote", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const choice = parseGovernanceVoteChoice(body.choice, body.support);
+    if (!choice) {
+      throw new HTTPException(400, { message: "choice or support is required" });
+    }
+
+    const proposal = await container.pactOnchain.voteGovernanceProposal({
+      proposalId: c.req.param("id"),
+      voterId: body.voterId ? String(body.voterId) : "",
+      choice,
+      weight:
+        typeof body.weight === "number" && Number.isFinite(body.weight)
+          ? Math.floor(body.weight)
+          : undefined,
+    });
+    return c.json(proposal);
+  });
+
+  app.post("/governance/proposals/:id/execute", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const proposal = await container.pactOnchain.executeGovernanceProposal({
+      proposalId: c.req.param("id"),
+      executorId: body.executorId ? String(body.executorId) : "system-governance-executor",
+    });
+    return c.json(proposal);
+  });
+
+  app.post("/rewards/epochs/:epoch/distribute", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const epoch = Number(c.req.param("epoch"));
+    if (!Number.isInteger(epoch) || epoch < 0) {
+      throw new HTTPException(400, { message: "epoch must be a non-negative integer" });
+    }
+
+    const distributionsInput = Array.isArray(body.distributions)
+      ? body.distributions
+      : Array.isArray(body.rewards)
+        ? body.rewards
+        : [];
+    const distributions = distributionsInput.map((distribution: unknown) => {
+      const payload = distribution && typeof distribution === "object"
+        ? (distribution as Record<string, unknown>)
+        : {};
+      return {
+        participantId: payload.participantId ? String(payload.participantId) : "",
+        amountCents:
+          typeof payload.amountCents === "number"
+            ? payload.amountCents
+            : typeof payload.amount === "number"
+              ? payload.amount
+              : Number(payload.amountCents ?? payload.amount),
+      };
+    });
+
+    const result = await container.pactOnchain.syncEpochRewards(epoch, distributions);
+    return c.json(result, 201);
+  });
+
+  app.get("/rewards/:participantId", async (c) => {
+    return c.json(await container.pactOnchain.getParticipantRewards(c.req.param("participantId")));
+  });
+
   app.post("/dev/plugins/publish", async (c) => {
     const body = await c.req.json();
     const plugin = await container.pactPluginMarketplace.publishPlugin({
@@ -1645,6 +1746,19 @@ function isSettlementRail(
 
 function isAnalyticsPeriod(value?: string): value is AnalyticsPeriod {
   return value === "hour" || value === "day" || value === "week";
+}
+
+function parseGovernanceVoteChoice(
+  value: unknown,
+  support: unknown,
+): "for" | "against" | "abstain" | undefined {
+  if (value === "for" || value === "against" || value === "abstain") {
+    return value;
+  }
+  if (typeof support === "boolean") {
+    return support ? "for" : "against";
+  }
+  return undefined;
 }
 
 function isSettlementRecordStatus(value?: string): value is "applied" | "reconciled" {
