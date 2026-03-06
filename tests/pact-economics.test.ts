@@ -120,6 +120,7 @@ describe("PactEconomics", () => {
 
     const execution = await economics.executeSettlement({
       settlementId: "settlement-stage2",
+      idempotencyKey: "settlement-stage2-key",
       model: {
         mode: "multi_asset",
         legs: [
@@ -191,5 +192,39 @@ describe("PactEconomics", () => {
     ).toBe(3);
     expect(eventNames.includes(DomainEvents.EconomicsSettlementRecordReconciled)).toBeTrue();
     expect(eventNames.includes(DomainEvents.EconomicsSettlementExecuted)).toBeTrue();
+  });
+
+  it("requires idempotency keys for settlement execution", async () => {
+    const economics = new PactEconomics({
+      settlementRecordRepository: new InMemoryDurableSettlementRecordRepository(),
+      settlementConnectors: {
+        llmTokenMetering: new InMemoryLlmTokenMeteringConnector(),
+        cloudCreditBilling: new InMemoryCloudCreditBillingConnector(),
+        apiQuotaAllocation: new InMemoryApiQuotaAllocationConnector(),
+      },
+    });
+
+    await economics.registerAsset({ id: "usdc-mainnet", kind: "usdc", symbol: "USDC" });
+    await economics.registerAsset({ id: "llm-gpt5", kind: "llm_token", symbol: "TOKEN" });
+
+    await expect(
+      economics.executeSettlement({
+        settlementId: "settlement-missing-idem",
+        idempotencyKey: " ",
+        model: {
+          mode: "multi_asset",
+          legs: [
+            {
+              id: "leg-1",
+              payerId: "issuer-1",
+              payeeId: "agent-1",
+              assetId: "llm-gpt5",
+              amount: 1,
+              unit: "token",
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow("idempotencyKey is required");
   });
 });

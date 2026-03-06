@@ -1,8 +1,12 @@
 import type { SettlementRecord } from "../settlement-records";
 import {
+  type FailedSettlementExecution,
   PactEconomics,
   type ConnectorHealthReport,
 } from "./pact-economics";
+
+const DEFAULT_RECONCILIATION_LIMIT = 50;
+const MAX_RECONCILIATION_LIMIT = 200;
 
 export interface UnreconciledSettlementView {
   settlementId: string;
@@ -25,6 +29,33 @@ export interface ReconciliationCycleResult {
 
 export interface PactReconciliationOptions {
   pactEconomics: PactEconomics;
+}
+
+export type ReconciliationQueueState = "pending" | "failed" | "all";
+
+export interface ReconciliationQueueRequest {
+  state?: ReconciliationQueueState;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface ReconciliationQueueItem {
+  settlementId: string;
+  state: Exclude<ReconciliationQueueState, "all">;
+  idempotencyKey?: string;
+  pendingRecordCount: number;
+  failedRecordCount: number;
+  recordIds: string[];
+  connectors: SettlementRecord["connector"][];
+  oldestCreatedAt: number;
+  updatedAt: number;
+  lastError?: string;
+  records: SettlementRecord[];
+}
+
+export interface ReconciliationQueuePage {
+  items: ReconciliationQueueItem[];
+  nextCursor?: string;
 }
 
 export class PactReconciliation {
@@ -73,6 +104,44 @@ export class PactReconciliation {
     });
   }
 
+  async listReconciliationQueue(
+    input: ReconciliationQueueRequest = {},
+  ): Promise<ReconciliationQueuePage> {
+    const cursor = this.parseCursor(input.cursor);
+    const limit = this.normalizeLimit(input.limit);
+    const state = input.state ?? "pending";
+
+    const pendingItems = (await this.listUnreconciledSettlements()).map((settlement) =>
+      this.buildPendingQueueItem(settlement),
+    );
+    const failedItems = this.pactEconomics
+      .listFailedSettlementExecutions()
+      .map((failure) => this.buildFailedQueueItem(failure));
+
+    const allItems = [...pendingItems, ...failedItems]
+      .filter((item) => state === "all" || item.state === state)
+      .sort((left, right) => {
+        if (left.updatedAt === right.updatedAt) {
+          if (left.settlementId === right.settlementId) {
+            if ((left.idempotencyKey ?? "") === (right.idempotencyKey ?? "")) {
+              return left.state.localeCompare(right.state);
+            }
+            return (left.idempotencyKey ?? "").localeCompare(right.idempotencyKey ?? "");
+          }
+          return left.settlementId.localeCompare(right.settlementId);
+        }
+        return left.updatedAt - right.updatedAt;
+      });
+
+    const items = allItems.slice(cursor, cursor + limit).map((item) => this.cloneQueueItem(item));
+    const nextCursor = cursor + limit < allItems.length ? String(cursor + limit) : undefined;
+
+    return {
+      items,
+      nextCursor,
+    };
+  }
+
   async runReconciliationCycle(): Promise<ReconciliationCycleResult> {
     const startedAt = Date.now();
     const unreconciledRecords = await this.pactEconomics.listSettlementRecords({ status: "applied" });
@@ -109,5 +178,69 @@ export class PactReconciliation {
       ...record,
       connectorMetadata: record.connectorMetadata ? { ...record.connectorMetadata } : undefined,
     };
+  }
+
+  private buildPendingQueueItem(settlement: UnreconciledSettlementView): ReconciliationQueueItem {
+    return {
+      settlementId: settlement.settlementId,
+      state: "pending",
+      pendingRecordCount: settlement.pendingRecordCount,
+      failedRecordCount: 0,
+      recordIds: [...settlement.recordIds],
+      connectors: [...settlement.connectors],
+      oldestCreatedAt: settlement.oldestCreatedAt,
+      updatedAt: settlement.oldestCreatedAt,
+      records: settlement.records.map((record) => this.cloneRecord(record)),
+    };
+  }
+
+  private buildFailedQueueItem(failure: FailedSettlementExecution): ReconciliationQueueItem {
+    return {
+      settlementId: failure.settlementId,
+      state: "failed",
+      idempotencyKey: failure.idempotencyKey,
+      pendingRecordCount: 0,
+      failedRecordCount: 1,
+      recordIds: [],
+      connectors: [],
+      oldestCreatedAt: failure.failedAt,
+      updatedAt: failure.failedAt,
+      lastError: failure.error,
+      records: [],
+    };
+  }
+
+  private cloneQueueItem(item: ReconciliationQueueItem): ReconciliationQueueItem {
+    return {
+      ...item,
+      recordIds: [...item.recordIds],
+      connectors: [...item.connectors],
+      records: item.records.map((record) => this.cloneRecord(record)),
+    };
+  }
+
+  private parseCursor(cursor?: string): number {
+    if (!cursor) {
+      return 0;
+    }
+
+    const parsed = Number(cursor);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new Error(`invalid cursor: ${cursor}`);
+    }
+
+    return parsed;
+  }
+
+  private normalizeLimit(limit?: number): number {
+    if (limit === undefined) {
+      return DEFAULT_RECONCILIATION_LIMIT;
+    }
+
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_RECONCILIATION_LIMIT) {
+      throw new Error(`invalid limit: ${limit}`);
+    }
+
+    return limit;
   }
 }

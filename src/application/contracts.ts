@@ -25,6 +25,11 @@ import type {
   MicropaymentBatch,
   PaymentRoute,
 } from "../domain/payment-routing";
+import type {
+  AdapterDurability,
+  AdapterErrorDescriptor,
+  AdapterHealthReport,
+} from "./adapter-runtime";
 
 export interface TaskRepository {
   save(task: Task): Promise<void>;
@@ -221,6 +226,34 @@ export interface ScheduledJob {
   runAt: number;
 }
 
+export type ComputeExecutionCheckpointState =
+  | "queued"
+  | "running"
+  | "retrying"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "timed_out";
+
+export interface ComputeExecutionCheckpoint {
+  jobId: string;
+  providerId: string;
+  attempt: number;
+  state: ComputeExecutionCheckpointState;
+  createdAt: number;
+  message?: string;
+  error?: AdapterErrorDescriptor;
+  metadata?: Record<string, string>;
+}
+
+export interface ComputeDispatchOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  onCheckpoint?: (checkpoint: ComputeExecutionCheckpoint) => Promise<void> | void;
+}
+
 export interface HeartbeatTask {
   id: string;
   name: string;
@@ -249,6 +282,10 @@ export interface HeartbeatSupervisor {
   enableTask(taskId: string): Promise<HeartbeatTask>;
   disableTask(taskId: string): Promise<HeartbeatTask>;
   tick(now?: number): Promise<HeartbeatExecution[]>;
+}
+
+export interface HealthCheckableAdapter {
+  getHealth?(): Promise<AdapterHealthReport> | AdapterHealthReport;
 }
 
 export interface X402PaymentAdapter {
@@ -351,8 +388,24 @@ export interface ResourceMeter {
   listAll(): Promise<ComputeUsageRecord[]>;
 }
 
+export interface ComputeExecutionCheckpointStore extends HealthCheckableAdapter {
+  save(checkpoint: ComputeExecutionCheckpoint): Promise<void>;
+  listByJob(jobId: string): Promise<ComputeExecutionCheckpoint[]>;
+  getLatest(jobId: string): Promise<ComputeExecutionCheckpoint | undefined>;
+}
+
 export interface ComputeExecutionAdapter {
   execute(job: ScheduledJob, provider: ComputeProvider): Promise<ComputeJobResult>;
+}
+
+export interface RuntimeAwareComputeExecutionAdapter
+  extends ComputeExecutionAdapter, HealthCheckableAdapter {
+  executeWithRuntime?(
+    job: ScheduledJob,
+    provider: ComputeProvider,
+    runtime: ComputeDispatchOptions,
+  ): Promise<ComputeJobResult>;
+  cancel?(jobId: string, reason?: string): Promise<boolean>;
 }
 
 // ── PactID / DID contracts ─────────────────────────────────────
@@ -426,6 +479,11 @@ export interface DataAssetRepository {
   save(asset: DataAsset): Promise<void>;
   getById(id: string): Promise<DataAsset | undefined>;
   list(): Promise<DataAsset[]>;
+}
+
+export interface DataAssetMetadataStore extends DataAssetRepository, HealthCheckableAdapter {
+  durability?: AdapterDurability;
+  isDurable?(): boolean;
 }
 
 export interface DataListingRepository {

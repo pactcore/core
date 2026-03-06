@@ -29,7 +29,12 @@ export interface SettlementConnectorRetryPolicy {
   backoffMs: number;
 }
 
-export type SettlementConnectorHealthState = "healthy" | "degraded" | "unhealthy";
+export interface SettlementConnectorCircuitBreakerPolicy {
+  failureThreshold: number;
+  cooldownMs: number;
+}
+
+export type SettlementConnectorHealthState = "open" | "half_open" | "closed";
 
 export interface SettlementConnectorFailure {
   attempt: number;
@@ -43,11 +48,16 @@ export interface SettlementConnectorFailure {
 export interface SettlementConnectorHealth {
   state: SettlementConnectorHealthState;
   retryPolicy: SettlementConnectorRetryPolicy;
+  circuitBreaker: SettlementConnectorCircuitBreakerPolicy;
+  consecutiveFailures: number;
+  lastFailureAt?: number;
+  lastError?: string;
   lastFailure?: SettlementConnectorFailure;
 }
 
 export interface ManagedSettlementConnector {
   getHealth(): SettlementConnectorHealth;
+  resetHealth(): void;
   hasExternalReference(externalReference: string): Promise<boolean>;
 }
 

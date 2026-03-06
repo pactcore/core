@@ -188,9 +188,9 @@ export class InMemoryDurableSettlementRecordRepository implements SettlementReco
     if (value === undefined) {
       return fallback;
     }
-    if (!Number.isInteger(value) || value <= 0) {
+    if (!Number.isInteger(value) || value <= 0 || value > max) {
       throw new Error(`invalid limit: ${value}`);
     }
-    return Math.min(value, max);
+    return value;
   }
 }

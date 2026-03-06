@@ -379,7 +379,28 @@ export type {
   GasSponsorshipManager,
   IdentitySBTContractClient,
   OnchainIdentityRecord,
+  DataAssetMetadataStore,
+  RuntimeAwareComputeExecutionAdapter,
+  ComputeExecutionCheckpoint,
+  ComputeExecutionCheckpointState,
+  ComputeExecutionCheckpointStore,
+  ComputeDispatchOptions,
 } from "./application/contracts";
+export {
+  AdapterOperationError,
+  DataAdapterError,
+  ComputeAdapterError,
+  DevAdapterError,
+  aggregateAdapterHealth,
+} from "./application/adapter-runtime";
+export type {
+  AdapterDurability,
+  AdapterErrorDescriptor,
+  AdapterCompatibilityReport,
+  AdapterHealthState,
+  AdapterHealthReport,
+  AdapterHealthSummary,
+} from "./application/adapter-runtime";
 export { InMemoryHeartbeatSupervisor } from "./infrastructure/heartbeat/in-memory-heartbeat-supervisor";
 export { FileBackedEventJournal } from "./infrastructure/event-bus/file-backed-event-journal";
 export { SQLiteEventJournal } from "./infrastructure/event-bus/sqlite-event-journal";
@@ -407,6 +428,7 @@ export { InMemoryAntiSpamRateLimitStore } from "./infrastructure/anti-spam/in-me
 export { InMemoryComputeProviderRegistry } from "./infrastructure/compute/in-memory-compute-provider-registry";
 export { InMemoryResourceMeter } from "./infrastructure/compute/in-memory-resource-meter";
 export { InMemoryComputeExecutionAdapter } from "./infrastructure/compute/in-memory-compute-execution-adapter";
+export { InMemoryComputeExecutionCheckpointStore } from "./infrastructure/compute/in-memory-compute-execution-checkpoint-store";
 export { DockerExecutionAdapter } from "./infrastructure/compute/docker-execution-adapter";
 export { PricingEngine } from "./infrastructure/compute/pricing-engine";
 export {
@@ -431,6 +453,7 @@ export { InMemoryProvenanceGraph } from "./infrastructure/data/in-memory-provena
 export { InMemoryIntegrityProofRepository } from "./infrastructure/data/in-memory-integrity-proof-repository";
 export { InMemoryDataAccessPolicyRepository } from "./infrastructure/data/in-memory-data-access-policy-repository";
 export { InMemoryDataAssetRepository } from "./infrastructure/data/in-memory-data-asset-repository";
+export { FileBackedDataAssetMetadataStore } from "./infrastructure/data/file-backed-data-asset-metadata-store";
 export { InMemoryDataListingRepository } from "./infrastructure/data/in-memory-data-listing-repository";
 export { InMemoryDataPurchaseRepository } from "./infrastructure/data/in-memory-data-purchase-repository";
 export { calculateRevenueDistribution } from "./domain/data-marketplace";
@@ -498,6 +521,8 @@ export type {
 export type { DataAsset, PublishDataAssetInput } from "./application/modules/pact-data";
 export type {
   DevIntegration,
+  DevIntegrationHealthReport,
+  PactDevOptions,
   RegisterDevIntegrationInput,
   RegisterSDKTemplateInput,
 } from "./application/modules/pact-dev";

@@ -14,8 +14,9 @@ describe("Reconciliation runtime", () => {
     const health = reconciliation.getConnectorHealth();
 
     expect(health).toHaveLength(3);
-    expect(health.every((entry) => entry.state === "healthy")).toBeTrue();
+    expect(health.every((entry) => entry.state === "closed")).toBeTrue();
     expect(health.every((entry) => entry.retryPolicy.maxRetries === 2)).toBeTrue();
+    expect(health.every((entry) => entry.consecutiveFailures === 0)).toBeTrue();
   });
 
   it("captures lastFailure and recovers health after retry success", async () => {
@@ -28,16 +29,23 @@ describe("Reconciliation runtime", () => {
     const llmHealth = economics
       .getConnectorHealth()
       .find((entry) => entry.connector === "llm_token_metering");
-    expect(llmHealth?.state).toBe("healthy");
+    expect(llmHealth?.state).toBe("closed");
+    expect(llmHealth?.consecutiveFailures).toBe(0);
+    expect(llmHealth?.lastFailureAt).toBeNumber();
+    expect(llmHealth?.lastError).toBe("transient llm outage");
     expect(llmHealth?.lastFailure?.message).toBe("transient llm outage");
     expect(llmHealth?.lastFailure?.attempt).toBe(1);
   });
 
-  it("marks a connector unhealthy when retries are exhausted", async () => {
+  it("opens a connector breaker when retries are exhausted", async () => {
     const connector = new InMemoryLlmTokenMeteringConnector({
       retryPolicy: {
         maxRetries: 1,
         backoffMs: 0,
+      },
+      circuitBreaker: {
+        failureThreshold: 2,
+        cooldownMs: 60_000,
       },
     });
     connector.queueFailure("connector hard down", 2);
@@ -57,8 +65,59 @@ describe("Reconciliation runtime", () => {
     ).rejects.toThrow("connector hard down");
 
     const health = connector.getHealth();
-    expect(health.state).toBe("unhealthy");
+    expect(health.state).toBe("open");
+    expect(health.consecutiveFailures).toBe(2);
+    expect(health.lastFailureAt).toBeNumber();
+    expect(health.lastError).toBe("connector hard down");
     expect(health.lastFailure?.attempt).toBe(2);
+  });
+
+  it("moves an open breaker to half-open after cooldown and closes on recovery", async () => {
+    const connector = new InMemoryLlmTokenMeteringConnector({
+      retryPolicy: {
+        maxRetries: 0,
+        backoffMs: 0,
+      },
+      circuitBreaker: {
+        failureThreshold: 1,
+        cooldownMs: 0,
+      },
+    });
+    connector.queueFailure("breaker probe failed", 1);
+
+    await expect(
+      connector.applyMeteringCredit({
+        settlementId: "settlement-half-open",
+        recordId: "record-half-open",
+        legId: "leg-half-open",
+        assetId: "llm-gpt5",
+        payerId: "issuer-1",
+        payeeId: "agent-1",
+        amount: 100,
+        unit: "token",
+        idempotencyKey: "half-open-1",
+      }),
+    ).rejects.toThrow("breaker probe failed");
+
+    expect(connector.getHealth().state).toBe("half_open");
+
+    await expect(
+      connector.applyMeteringCredit({
+        settlementId: "settlement-half-open",
+        recordId: "record-half-open-2",
+        legId: "leg-half-open-2",
+        assetId: "llm-gpt5",
+        payerId: "issuer-1",
+        payeeId: "agent-1",
+        amount: 100,
+        unit: "token",
+        idempotencyKey: "half-open-2",
+      }),
+    ).resolves.toMatchObject({ status: "applied" });
+
+    const recoveredHealth = connector.getHealth();
+    expect(recoveredHealth.state).toBe("closed");
+    expect(recoveredHealth.consecutiveFailures).toBe(0);
   });
 
   it("deduplicates settlement execution by idempotency key", async () => {
@@ -128,7 +187,7 @@ describe("Reconciliation runtime", () => {
 
     expect(response.status).toBe(200);
     expect(health).toHaveLength(3);
-    expect(health.every((entry) => entry.state === "healthy")).toBeTrue();
+    expect(health.every((entry) => entry.state === "closed")).toBeTrue();
   });
 
   it("runs reconciliation and lists unreconciled settlements over the API", async () => {

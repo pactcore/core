@@ -271,6 +271,12 @@ export interface ComputeJobResult {
   error?: string;
   usage: ComputeUsageRecord;
   completedAt: number;
+  execution?: {
+    terminalState: "completed" | "failed" | "cancelled" | "timed_out";
+    attemptCount: number;
+    retryableFailure?: boolean;
+    lastErrorCode?: string;
+  };
 }
 
 // ── PactID / DID types ─────────────────────────────────────────

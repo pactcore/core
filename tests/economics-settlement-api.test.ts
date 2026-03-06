@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { createApp } from "../src/api/app";
+import { createContainer } from "../src/application/container";
+import { PactEconomics } from "../src/application/modules/pact-economics";
+import { PactReconciliation } from "../src/application/modules/pact-reconciliation";
+import { InMemoryDurableSettlementRecordRepository } from "../src/infrastructure/repositories/in-memory-durable-settlement-record-repository";
+import { InMemoryApiQuotaAllocationConnector } from "../src/infrastructure/settlement/in-memory-api-quota-allocation-connector";
+import { InMemoryCloudCreditBillingConnector } from "../src/infrastructure/settlement/in-memory-cloud-credit-billing-connector";
+import { InMemoryLlmTokenMeteringConnector } from "../src/infrastructure/settlement/in-memory-llm-token-metering-connector";
 
 describe("Economics settlement API", () => {
   it("executes non-stablecoin settlement and exposes audit records", async () => {
@@ -23,7 +30,10 @@ describe("Economics settlement API", () => {
 
     const executeResponse = await app.request("/economics/settlements/execute", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "Idempotency-Key": "economics-settlement-api-1",
+      },
       body: JSON.stringify({
         settlementId: "settlement-api-1",
         model: {
@@ -140,4 +150,204 @@ describe("Economics settlement API", () => {
       replay.entries.some((entry) => entry.action === "reconciled" && entry.recordId === recordId),
     ).toBeTrue();
   });
+
+  it("validates idempotency, paginates pending reconciliation, and resets connector breakers", async () => {
+    const app = createApp();
+    await registerAssets(app);
+
+    const missingIdempotencyResponse = await app.request("/economics/settlements/execute", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        settlementId: "settlement-no-idem",
+        model: buildSettlementModel("settlement-no-idem"),
+      }),
+    });
+    expect(missingIdempotencyResponse.status).toBe(400);
+
+    const firstExecute = await app.request("/economics/settlements/execute", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Idempotency-Key": "pending-route-key-1",
+      },
+      body: JSON.stringify({
+        settlementId: "settlement-pending-1",
+        model: buildSettlementModel("settlement-pending-1"),
+      }),
+    });
+    expect(firstExecute.status).toBe(201);
+
+    const secondExecute = await app.request("/economics/settlements/execute", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Idempotency-Key": "pending-route-key-2",
+      },
+      body: JSON.stringify({
+        settlementId: "settlement-pending-2",
+        model: buildSettlementModel("settlement-pending-2"),
+      }),
+    });
+    expect(secondExecute.status).toBe(201);
+
+    const firstPendingResponse = await app.request("/economics/reconciliation/pending?limit=1");
+    expect(firstPendingResponse.status).toBe(200);
+    const firstPendingPage = (await firstPendingResponse.json()) as {
+      items: Array<{ settlementId: string; state: string }>;
+      nextCursor?: string;
+    };
+    expect(firstPendingPage.items).toHaveLength(1);
+    expect(firstPendingPage.items[0]?.state).toBe("pending");
+    expect(firstPendingPage.nextCursor).toBeDefined();
+
+    const secondPendingResponse = await app.request(
+      `/economics/reconciliation/pending?limit=1&cursor=${firstPendingPage.nextCursor}`,
+    );
+    expect(secondPendingResponse.status).toBe(200);
+    const secondPendingPage = (await secondPendingResponse.json()) as {
+      items: Array<{ settlementId: string }>;
+    };
+    expect(secondPendingPage.items).toHaveLength(1);
+    expect(secondPendingPage.items[0]?.settlementId).not.toBe(firstPendingPage.items[0]?.settlementId);
+
+    const invalidLowLimitResponse = await app.request("/economics/reconciliation/pending?limit=0");
+    expect(invalidLowLimitResponse.status).toBe(400);
+
+    const invalidHighLimitResponse = await app.request("/economics/reconciliation/pending?limit=201");
+    expect(invalidHighLimitResponse.status).toBe(400);
+
+    const failingLlmConnector = new InMemoryLlmTokenMeteringConnector({
+      retryPolicy: { maxRetries: 0, backoffMs: 0 },
+      circuitBreaker: { failureThreshold: 1, cooldownMs: 60_000 },
+    });
+    failingLlmConnector.queueFailure("connector breaker test", 1);
+    const failingEconomics = new PactEconomics({
+      settlementRecordRepository: new InMemoryDurableSettlementRecordRepository(),
+      settlementConnectors: {
+        llmTokenMetering: failingLlmConnector,
+        cloudCreditBilling: new InMemoryCloudCreditBillingConnector(),
+        apiQuotaAllocation: new InMemoryApiQuotaAllocationConnector(),
+      },
+    });
+    await registerAssetsForEconomics(failingEconomics);
+
+    const container = createContainer();
+    container.pactEconomics = failingEconomics;
+    container.pactReconciliation = new PactReconciliation({ pactEconomics: failingEconomics });
+    const failingApp = createApp(undefined, { container });
+
+    const failedExecute = await failingApp.request("/economics/settlements/execute", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Idempotency-Key": "failing-route-key",
+      },
+      body: JSON.stringify({
+        settlementId: "settlement-failed-1",
+        model: buildSettlementModel("settlement-failed-1"),
+      }),
+    });
+    expect(failedExecute.status).toBe(400);
+
+    const failedQueueResponse = await failingApp.request(
+      "/economics/reconciliation/pending?state=failed&limit=10",
+    );
+    expect(failedQueueResponse.status).toBe(200);
+    const failedQueue = (await failedQueueResponse.json()) as {
+      items: Array<{ settlementId: string; state: string; lastError?: string }>;
+    };
+    expect(failedQueue.items).toHaveLength(1);
+    expect(failedQueue.items[0]?.state).toBe("failed");
+    expect(failedQueue.items[0]?.lastError).toContain("connector breaker test");
+
+    const healthResponse = await failingApp.request("/economics/connectors/health");
+    expect(healthResponse.status).toBe(200);
+    const health = (await healthResponse.json()) as Array<{
+      connector: string;
+      state: string;
+      consecutiveFailures: number;
+    }>;
+    const llmHealth = health.find((entry) => entry.connector === "llm_token_metering");
+    expect(llmHealth?.state).toBe("open");
+    expect(llmHealth?.consecutiveFailures).toBe(1);
+
+    const resetResponse = await failingApp.request("/economics/connectors/llm_token_metering/reset", {
+      method: "POST",
+    });
+    expect(resetResponse.status).toBe(200);
+    const resetHealth = (await resetResponse.json()) as {
+      state: string;
+      consecutiveFailures: number;
+      lastError?: string;
+    };
+    expect(resetHealth.state).toBe("closed");
+    expect(resetHealth.consecutiveFailures).toBe(0);
+    expect(resetHealth.lastError).toBeUndefined();
+  });
 });
+
+function buildSettlementModel(settlementId: string) {
+  return {
+    mode: "multi_asset" as const,
+    legs: [
+      {
+        id: `${settlementId}-leg-1`,
+        payerId: "issuer-1",
+        payeeId: "agent-1",
+        assetId: "usdc-mainnet",
+        amount: 12,
+        unit: "USDC",
+      },
+      {
+        id: `${settlementId}-leg-2`,
+        payerId: "issuer-1",
+        payeeId: "agent-1",
+        assetId: "llm-gpt5",
+        amount: 150000,
+        unit: "token",
+      },
+      {
+        id: `${settlementId}-leg-3`,
+        payerId: "issuer-1",
+        payeeId: "agent-1",
+        assetId: "cloud-aws",
+        amount: 3,
+        unit: "credit",
+      },
+      {
+        id: `${settlementId}-leg-4`,
+        payerId: "issuer-1",
+        payeeId: "agent-1",
+        assetId: "search-api",
+        amount: 2400,
+        unit: "request",
+      },
+    ],
+  };
+}
+
+async function registerAssets(app: ReturnType<typeof createApp>): Promise<void> {
+  const assets = [
+    { id: "usdc-mainnet", kind: "usdc", symbol: "USDC" },
+    { id: "llm-gpt5", kind: "llm_token", symbol: "TOKEN" },
+    { id: "cloud-aws", kind: "cloud_credit", symbol: "AWSC" },
+    { id: "search-api", kind: "api_quota", symbol: "QPS" },
+  ];
+
+  for (const asset of assets) {
+    const response = await app.request("/economics/assets", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(asset),
+    });
+    expect(response.status).toBe(201);
+  }
+}
+
+async function registerAssetsForEconomics(economics: PactEconomics): Promise<void> {
+  await economics.registerAsset({ id: "usdc-mainnet", kind: "usdc", symbol: "USDC" });
+  await economics.registerAsset({ id: "llm-gpt5", kind: "llm_token", symbol: "TOKEN" });
+  await economics.registerAsset({ id: "cloud-aws", kind: "cloud_credit", symbol: "AWSC" });
+  await economics.registerAsset({ id: "search-api", kind: "api_quota", symbol: "QPS" });
+}

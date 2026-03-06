@@ -1,11 +1,17 @@
 import type {
   DataAccessPolicyRepository,
-  DataAssetRepository,
+  DataAssetMetadataStore,
   DataListingRepository,
   DataPurchaseRepository,
   IntegrityProofRepository,
   ProvenanceGraph,
 } from "../contracts";
+import {
+  aggregateAdapterHealth,
+  DataAdapterError,
+  type AdapterHealthReport,
+  type AdapterHealthSummary,
+} from "../adapter-runtime";
 import type { DataAccessPolicy, IntegrityProof } from "../../domain/types";
 import type {
   DataCategory,
@@ -44,7 +50,7 @@ const DATA_CATEGORIES: DataCategory[] = [
 
 export class PactData {
   constructor(
-    private readonly assetRepository: DataAssetRepository,
+    private readonly assetRepository: DataAssetMetadataStore,
     private readonly provenanceGraph: ProvenanceGraph,
     private readonly integrityProofRepository: IntegrityProofRepository,
     private readonly accessPolicyRepository: DataAccessPolicyRepository,
@@ -52,205 +58,263 @@ export class PactData {
     private readonly purchaseRepository?: DataPurchaseRepository,
   ) {}
 
-  // ── Asset publishing ───────────────────────────────────────
-
   async publish(input: PublishDataAssetInput): Promise<DataAsset> {
-    const asset: DataAsset = {
-      id: generateId("data"),
-      ownerId: input.ownerId,
-      title: input.title,
-      uri: input.uri,
-      tags: input.tags ?? [],
-      createdAt: Date.now(),
-    };
+    return this.withDataAdapterError("publish", async () => {
+      const asset: DataAsset = {
+        id: generateId("data"),
+        ownerId: input.ownerId,
+        title: input.title,
+        uri: input.uri,
+        tags: input.tags ?? [],
+        createdAt: Date.now(),
+      };
 
-    await this.assetRepository.save(asset);
+      await this.assetRepository.save(asset);
 
-    // Auto-create provenance edges
-    if (input.derivedFrom) {
-      for (const parentId of input.derivedFrom) {
-        await this.provenanceGraph.addEdge({
-          childId: asset.id,
-          parentId,
-          relationship: "derived_from",
-          createdAt: Date.now(),
-        });
+      if (input.derivedFrom) {
+        for (const parentId of input.derivedFrom) {
+          await this.provenanceGraph.addEdge({
+            childId: asset.id,
+            parentId,
+            relationship: "derived_from",
+            createdAt: Date.now(),
+          });
+        }
       }
-    }
 
-    // Default access policy: public
-    await this.accessPolicyRepository.save({
-      assetId: asset.id,
-      allowedParticipantIds: [input.ownerId],
-      isPublic: true,
+      await this.accessPolicyRepository.save({
+        assetId: asset.id,
+        allowedParticipantIds: [input.ownerId],
+        isPublic: true,
+      });
+
+      return asset;
     });
-
-    return asset;
   }
 
   async list(): Promise<DataAsset[]> {
-    return this.assetRepository.list();
+    return this.withDataAdapterError("list", () => this.assetRepository.list());
   }
 
   async getById(id: string): Promise<DataAsset | undefined> {
-    return this.assetRepository.getById(id);
+    return this.withDataAdapterError("get_by_id", () => this.assetRepository.getById(id));
   }
 
-  // ── Provenance ─────────────────────────────────────────────
-
   async getLineage(assetId: string) {
-    return this.provenanceGraph.getLineage(assetId);
+    return this.withDataAdapterError("get_lineage", () => this.provenanceGraph.getLineage(assetId));
   }
 
   async getDependents(assetId: string) {
-    return this.provenanceGraph.getDependents(assetId);
+    return this.withDataAdapterError("get_dependents", () => this.provenanceGraph.getDependents(assetId));
   }
 
-  // ── Integrity proofs ───────────────────────────────────────
-
   async registerIntegrityProof(assetId: string, contentHash: string): Promise<IntegrityProof> {
-    const proof: IntegrityProof = {
-      assetId,
-      algorithm: "sha-256",
-      hash: contentHash,
-      provenAt: Date.now(),
-    };
-    await this.integrityProofRepository.save(proof);
-    return proof;
+    return this.withDataAdapterError("register_integrity_proof", async () => {
+      const proof: IntegrityProof = {
+        assetId,
+        algorithm: "sha-256",
+        hash: contentHash,
+        provenAt: Date.now(),
+      };
+      await this.integrityProofRepository.save(proof);
+      return proof;
+    });
   }
 
   async verifyIntegrity(assetId: string, contentHash: string): Promise<boolean> {
-    const proof = await this.integrityProofRepository.getByAsset(assetId);
-    if (!proof) return false;
-    return proof.hash === contentHash;
+    return this.withDataAdapterError("verify_integrity", async () => {
+      const proof = await this.integrityProofRepository.getByAsset(assetId);
+      if (!proof) return false;
+      return proof.hash === contentHash;
+    });
   }
-
-  // ── Access control ─────────────────────────────────────────
 
   async setAccessPolicy(
     assetId: string,
     allowedParticipantIds: string[],
     isPublic: boolean,
   ): Promise<DataAccessPolicy> {
-    const policy: DataAccessPolicy = { assetId, allowedParticipantIds, isPublic };
-    await this.accessPolicyRepository.save(policy);
-    return policy;
+    return this.withDataAdapterError("set_access_policy", async () => {
+      const policy: DataAccessPolicy = { assetId, allowedParticipantIds, isPublic };
+      await this.accessPolicyRepository.save(policy);
+      return policy;
+    });
   }
 
   async checkAccess(assetId: string, participantId: string): Promise<boolean> {
-    const policy = await this.accessPolicyRepository.getByAsset(assetId);
-    if (!policy) return false;
-    if (policy.isPublic) return true;
-    return policy.allowedParticipantIds.includes(participantId);
+    return this.withDataAdapterError("check_access", async () => {
+      const policy = await this.accessPolicyRepository.getByAsset(assetId);
+      if (!policy) return false;
+      if (policy.isPublic) return true;
+      return policy.allowedParticipantIds.includes(participantId);
+    });
   }
 
-  // ── Marketplace ─────────────────────────────────────────────
-
   async listAsset(assetId: string, priceCents: number, category: DataCategory): Promise<DataListing> {
-    if (!Number.isInteger(priceCents) || priceCents <= 0) {
-      throw new Error("Listing price must be a positive integer number of cents");
-    }
+    return this.withDataAdapterError("list_asset", async () => {
+      if (!Number.isInteger(priceCents) || priceCents <= 0) {
+        throw new Error("Listing price must be a positive integer number of cents");
+      }
 
-    const asset = await this.assetRepository.getById(assetId);
-    if (!asset) {
-      throw new Error(`Asset ${assetId} not found`);
-    }
+      const asset = await this.assetRepository.getById(assetId);
+      if (!asset) {
+        throw new Error(`Asset ${assetId} not found`);
+      }
 
-    const listing: DataListing = {
-      id: generateId("listing"),
-      assetId,
-      sellerId: asset.ownerId,
-      priceCents,
-      currency: "USDC",
-      category,
-      listedAt: Date.now(),
-      active: true,
-    };
+      const listing: DataListing = {
+        id: generateId("listing"),
+        assetId,
+        sellerId: asset.ownerId,
+        priceCents,
+        currency: "USDC",
+        category,
+        listedAt: Date.now(),
+        active: true,
+      };
 
-    await this.getListingRepository().save(listing);
-    return listing;
+      await this.getListingRepository().save(listing);
+      return listing;
+    });
   }
 
   async delistAsset(listingId: string): Promise<void> {
-    const listingRepository = this.getListingRepository();
-    const listing = await listingRepository.getById(listingId);
-    if (!listing) {
-      throw new Error(`Listing ${listingId} not found`);
-    }
+    await this.withDataAdapterError("delist_asset", async () => {
+      const listingRepository = this.getListingRepository();
+      const listing = await listingRepository.getById(listingId);
+      if (!listing) {
+        throw new Error(`Listing ${listingId} not found`);
+      }
 
-    await listingRepository.save({
-      ...listing,
-      active: false,
+      await listingRepository.save({
+        ...listing,
+        active: false,
+      });
     });
   }
 
   async purchaseAsset(listingId: string, buyerId: string): Promise<DataPurchase> {
-    const listingRepository = this.getListingRepository();
-    const purchaseRepository = this.getPurchaseRepository();
-    const listing = await listingRepository.getById(listingId);
-    if (!listing) {
-      throw new Error(`Listing ${listingId} not found`);
-    }
-    if (!listing.active) {
-      throw new Error(`Listing ${listingId} is not active`);
-    }
+    return this.withDataAdapterError("purchase_asset", async () => {
+      const listingRepository = this.getListingRepository();
+      const purchaseRepository = this.getPurchaseRepository();
+      const listing = await listingRepository.getById(listingId);
+      if (!listing) {
+        throw new Error(`Listing ${listingId} not found`);
+      }
+      if (!listing.active) {
+        throw new Error(`Listing ${listingId} is not active`);
+      }
 
-    const distribution = calculateRevenueDistribution(listing.priceCents);
-    const purchase: DataPurchase = {
-      id: generateId("purchase"),
-      listingId: listing.id,
-      assetId: listing.assetId,
-      buyerId,
-      priceCents: listing.priceCents,
-      revenueDistribution: distribution,
-      purchasedAt: Date.now(),
-    };
+      const distribution = calculateRevenueDistribution(listing.priceCents);
+      const purchase: DataPurchase = {
+        id: generateId("purchase"),
+        listingId: listing.id,
+        assetId: listing.assetId,
+        buyerId,
+        priceCents: listing.priceCents,
+        revenueDistribution: distribution,
+        purchasedAt: Date.now(),
+      };
 
-    await purchaseRepository.save(purchase);
-    await this.grantBuyerAccess(listing.assetId, buyerId);
-    return purchase;
+      await purchaseRepository.save(purchase);
+      await this.grantBuyerAccess(listing.assetId, buyerId);
+      return purchase;
+    });
   }
 
   async getMarketplaceStats(): Promise<DataMarketplaceStats> {
-    const listingRepository = this.getListingRepository();
-    const purchaseRepository = this.getPurchaseRepository();
+    return this.withDataAdapterError("get_marketplace_stats", async () => {
+      const listingRepository = this.getListingRepository();
+      const purchaseRepository = this.getPurchaseRepository();
 
-    const listingMap = new Map<string, DataListing>();
-    for (const category of DATA_CATEGORIES) {
-      const listings = await listingRepository.listByCategory(category);
-      for (const listing of listings) {
-        listingMap.set(listing.id, listing);
+      const listingMap = new Map<string, DataListing>();
+      for (const category of DATA_CATEGORIES) {
+        const listings = await listingRepository.listByCategory(category);
+        for (const listing of listings) {
+          listingMap.set(listing.id, listing);
+        }
       }
-    }
 
-    const purchaseMap = new Map<string, DataPurchase>();
-    const listedAssetIds = new Set([...listingMap.values()].map((listing) => listing.assetId));
-    for (const assetId of listedAssetIds) {
-      const purchases = await purchaseRepository.listByAsset(assetId);
-      for (const purchase of purchases) {
-        purchaseMap.set(purchase.id, purchase);
+      const purchaseMap = new Map<string, DataPurchase>();
+      const listedAssetIds = new Set([...listingMap.values()].map((listing) => listing.assetId));
+      for (const assetId of listedAssetIds) {
+        const purchases = await purchaseRepository.listByAsset(assetId);
+        for (const purchase of purchases) {
+          purchaseMap.set(purchase.id, purchase);
+        }
       }
-    }
 
-    const totalRevenueCents = [...purchaseMap.values()].reduce(
-      (sum, purchase) => sum + purchase.priceCents,
-      0,
-    );
+      const totalRevenueCents = [...purchaseMap.values()].reduce(
+        (sum, purchase) => sum + purchase.priceCents,
+        0,
+      );
 
-    return {
-      totalListings: listingMap.size,
-      totalPurchases: purchaseMap.size,
-      totalRevenueCents,
-    };
+      return {
+        totalListings: listingMap.size,
+        totalPurchases: purchaseMap.size,
+        totalRevenueCents,
+      };
+    });
   }
 
   async listMarketplace(category?: DataCategory): Promise<DataListing[]> {
-    const listingRepository = this.getListingRepository();
-    if (category) {
-      const listings = await listingRepository.listByCategory(category);
-      return listings.filter((listing) => listing.active);
-    }
-    return listingRepository.listActive();
+    return this.withDataAdapterError("list_marketplace", async () => {
+      const listingRepository = this.getListingRepository();
+      if (category) {
+        const listings = await listingRepository.listByCategory(category);
+        return listings.filter((listing) => listing.active);
+      }
+      return listingRepository.listActive();
+    });
+  }
+
+  async getAdapterHealth(): Promise<AdapterHealthSummary> {
+    const reports: AdapterHealthReport[] = [
+      this.assetRepository.getHealth
+        ? await this.assetRepository.getHealth()
+        : {
+            name: "asset-metadata-store",
+            state: this.assetRepository.isDurable?.() ? "healthy" : "degraded",
+            checkedAt: Date.now(),
+            durable: this.assetRepository.isDurable?.() ?? false,
+            durability: this.assetRepository.durability ?? "memory",
+            features: {
+              assetMetadata: true,
+            },
+          },
+      {
+        name: "provenance-graph",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: {
+          lineageTracking: true,
+        },
+      },
+      {
+        name: "integrity-proof-repository",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: {
+          integrityVerification: true,
+        },
+      },
+      {
+        name: "access-policy-repository",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: {
+          accessControl: true,
+          marketplace: Boolean(this.listingRepository && this.purchaseRepository),
+        },
+      },
+    ];
+
+    return aggregateAdapterHealth(reports);
   }
 
   private getListingRepository(): DataListingRepository {
@@ -286,5 +350,36 @@ export class PactData {
       ...existingPolicy,
       allowedParticipantIds: [...existingPolicy.allowedParticipantIds, buyerId],
     });
+  }
+
+  private async withDataAdapterError<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      if (error instanceof DataAdapterError) {
+        throw error;
+      }
+
+      throw new DataAdapterError(error instanceof Error ? error.message : String(error), {
+        operation,
+        code: this.resolveDataErrorCode(operation, error),
+        retryable: this.isRetryableError(error),
+        cause: error,
+      });
+    }
+  }
+
+  private resolveDataErrorCode(operation: string, error: unknown): string {
+    const code = (error as { code?: string }).code;
+    if (typeof code === "string") {
+      return `data_${code.toLowerCase()}`;
+    }
+
+    return `data_${operation}_failed`;
+  }
+
+  private isRetryableError(error: unknown): boolean {
+    const code = (error as { code?: string }).code;
+    return code === "EAGAIN" || code === "ETIMEDOUT" || code === "ECONNRESET";
   }
 }

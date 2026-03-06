@@ -37,6 +37,7 @@ import { InMemoryLlmTokenMeteringConnector } from "../infrastructure/settlement/
 import { InMemoryComputeProviderRegistry } from "../infrastructure/compute/in-memory-compute-provider-registry";
 import { InMemoryResourceMeter } from "../infrastructure/compute/in-memory-resource-meter";
 import { InMemoryComputeExecutionAdapter } from "../infrastructure/compute/in-memory-compute-execution-adapter";
+import { InMemoryComputeExecutionCheckpointStore } from "../infrastructure/compute/in-memory-compute-execution-checkpoint-store";
 import { PricingEngine } from "../infrastructure/compute/pricing-engine";
 import { defaultPricingTable } from "../domain/compute-pricing";
 import { InMemoryDIDRepository } from "../infrastructure/identity/in-memory-did-repository";
@@ -50,6 +51,7 @@ import { InMemoryProvenanceGraph } from "../infrastructure/data/in-memory-proven
 import { InMemoryIntegrityProofRepository } from "../infrastructure/data/in-memory-integrity-proof-repository";
 import { InMemoryDataAccessPolicyRepository } from "../infrastructure/data/in-memory-data-access-policy-repository";
 import { InMemoryDataAssetRepository } from "../infrastructure/data/in-memory-data-asset-repository";
+import { FileBackedDataAssetMetadataStore } from "../infrastructure/data/file-backed-data-asset-metadata-store";
 import { InMemoryDataListingRepository } from "../infrastructure/data/in-memory-data-listing-repository";
 import { InMemoryDataPurchaseRepository } from "../infrastructure/data/in-memory-data-purchase-repository";
 import { InMemoryPolicyRegistry } from "../infrastructure/governance/in-memory-policy-registry";
@@ -111,6 +113,7 @@ export interface PactContainerEnvironment {
   PACT_MISSION_STORE_FILE?: string;
   PACT_SETTLEMENT_RECORD_STORE_FILE?: string;
   PACT_EVENT_JOURNAL_STORE_FILE?: string;
+  PACT_DATA_ASSET_STORE_FILE?: string;
   PACT_CHALLENGE_MIN_STAKE_CENTS?: string;
   PACT_CHALLENGE_PENALTY_BPS?: string;
   PACT_CHALLENGE_JURY_SHARE_BPS?: string;
@@ -143,6 +146,7 @@ export function createContainer(
       ? new SQLiteTaskRepository({ filePath: dbFile })
       : new InMemoryTaskRepository();
   const missionStoreFile = env.PACT_MISSION_STORE_FILE;
+  const dataAssetStoreFile = env.PACT_DATA_ASSET_STORE_FILE;
   const missionRepository = missionStoreFile
     ? new FileBackedMissionRepository({
         filePath: missionStoreFile,
@@ -194,6 +198,7 @@ export function createContainer(
   const providerRegistry = new InMemoryComputeProviderRegistry();
   const resourceMeter = new InMemoryResourceMeter();
   const executionAdapter = new InMemoryComputeExecutionAdapter();
+  const checkpointStore = new InMemoryComputeExecutionCheckpointStore();
   const pricingEngine = new PricingEngine(defaultPricingTable);
   const didRepository = new InMemoryDIDRepository();
   const credentialIssuer = new InMemoryCredentialIssuer();
@@ -206,7 +211,9 @@ export function createContainer(
   const provenanceGraph = new InMemoryProvenanceGraph();
   const integrityProofRepository = new InMemoryIntegrityProofRepository();
   const dataAccessPolicyRepository = new InMemoryDataAccessPolicyRepository();
-  const dataAssetRepository = new InMemoryDataAssetRepository();
+  const dataAssetRepository = dataAssetStoreFile
+    ? new FileBackedDataAssetMetadataStore({ filePath: dataAssetStoreFile })
+    : new InMemoryDataAssetRepository();
   const dataListingRepository = new InMemoryDataListingRepository();
   const dataPurchaseRepository = new InMemoryDataPurchaseRepository();
   const policyRegistry = new InMemoryPolicyRegistry();
@@ -255,6 +262,7 @@ export function createContainer(
     resourceMeter,
     executionAdapter,
     pricingEngine,
+    checkpointStore,
   );
   const pactZK = new PactZK(zkProver, zkVerifier, zkProofRepository);
   const pactData = new PactData(
@@ -265,7 +273,9 @@ export function createContainer(
     dataListingRepository,
     dataPurchaseRepository,
   );
-  const pactDev = new PactDev(policyRegistry, templateRepository);
+  const pactDev = new PactDev(policyRegistry, templateRepository, {
+    runtimeVersion: "0.2.0",
+  });
   const pactOnchain = new PactOnchain();
   const pactPluginMarketplace = new PactPluginMarketplace(
     pluginPackageRepository,

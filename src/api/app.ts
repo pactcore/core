@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { AdapterOperationError } from "../application/adapter-runtime";
 import { createApiKeyAuth } from "./middleware/api-key-auth";
 import { createRateLimiter } from "./middleware/rate-limiter";
 import { createUsageTracker, UsageTracker } from "./middleware/usage-tracker";
@@ -951,6 +952,10 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(await container.pactCompute.listProviders());
   });
 
+  app.get("/compute/adapters/health", async (c) => {
+    return c.json(await container.pactCompute.getAdapterHealth());
+  });
+
   app.post("/compute/providers", async (c) => {
     const body = await c.req.json();
     const provider = {
@@ -1071,6 +1076,10 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
 
   app.get("/data/assets", async (c) => {
     return c.json(await container.pactData.list());
+  });
+
+  app.get("/data/adapters/health", async (c) => {
+    return c.json(await container.pactData.getAdapterHealth());
   });
 
   app.post("/data/assets", async (c) => {
@@ -1308,10 +1317,17 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
   app.post("/economics/settlements/execute", async (c) => {
     const body = await c.req.json();
     const idempotencyHeader = c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key");
+    const idempotencyKey = idempotencyHeader ?? (body.idempotencyKey ? String(body.idempotencyKey) : undefined);
+    if (!idempotencyKey) {
+      throw new HTTPException(400, {
+        message: "Idempotency-Key header or idempotencyKey body field is required",
+      });
+    }
+
     const result = await container.pactEconomics.executeSettlement({
       model: body.model,
       settlementId: body.settlementId ? String(body.settlementId) : undefined,
-      idempotencyKey: idempotencyHeader ?? (body.idempotencyKey ? String(body.idempotencyKey) : undefined),
+      idempotencyKey,
     });
     return c.json(result, 201);
   });
@@ -1320,12 +1336,36 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(container.pactReconciliation.getConnectorHealth());
   });
 
+  app.post("/economics/connectors/:connectorId/reset", async (c) => {
+    const connectorId = c.req.param("connectorId");
+    if (!isSettlementRecordConnector(connectorId)) {
+      throw new HTTPException(404, { message: "Connector not found" });
+    }
+
+    return c.json(container.pactEconomics.resetConnectorHealth(connectorId));
+  });
+
   app.post("/economics/reconciliation/run", async (c) => {
     return c.json(await container.pactReconciliation.runReconciliationCycle(), 201);
   });
 
   app.get("/economics/reconciliation/unreconciled", async (c) => {
     return c.json(await container.pactReconciliation.listUnreconciledSettlements());
+  });
+
+  app.get("/economics/reconciliation/pending", async (c) => {
+    const state = c.req.query("state");
+    if (state && !isReconciliationQueueState(state)) {
+      throw new HTTPException(400, { message: "Invalid reconciliation queue state" });
+    }
+
+    return c.json(
+      await container.pactReconciliation.listReconciliationQueue({
+        state,
+        cursor: c.req.query("cursor"),
+        limit: parseOptionalBoundedIntegerQuery(c.req.query("limit"), "limit", 1, 200),
+      }),
+    );
   });
 
   app.get("/economics/settlements/records", async (c) => {
@@ -1350,7 +1390,6 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     const rail = isSettlementRail(railValue) ? railValue : undefined;
     const statusValue = c.req.query("status");
     const status = isSettlementRecordStatus(statusValue) ? statusValue : undefined;
-    const limitValue = c.req.query("limit");
     const page = await container.pactEconomics.querySettlementRecords({
       settlementId: c.req.query("settlementId"),
       assetId: c.req.query("assetId"),
@@ -1360,17 +1399,15 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
       status,
       reconciledBy: c.req.query("reconciledBy"),
       cursor: c.req.query("cursor"),
-      limit: limitValue ? Number(limitValue) : undefined,
+      limit: parseOptionalBoundedIntegerQuery(c.req.query("limit"), "limit", 1, 200),
     });
     return c.json(page);
   });
 
   app.get("/economics/settlements/records/replay", async (c) => {
-    const fromOffsetValue = c.req.query("fromOffset");
-    const limitValue = c.req.query("limit");
     const replay = await container.pactEconomics.replaySettlementRecordLifecycle({
-      fromOffset: fromOffsetValue ? Number(fromOffsetValue) : undefined,
-      limit: limitValue ? Number(limitValue) : undefined,
+      fromOffset: parseOptionalMinimumIntegerQuery(c.req.query("fromOffset"), "fromOffset", 0),
+      limit: parseOptionalBoundedIntegerQuery(c.req.query("limit"), "limit", 1, 500),
     });
     return c.json(replay);
   });
@@ -1540,12 +1577,20 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(await container.pactDev.list());
   });
 
+  app.get("/dev/integrations/health", async (c) => {
+    return c.json(await container.pactDev.listIntegrationHealth());
+  });
+
   app.post("/dev/integrations", async (c) => {
     const body = await c.req.json();
     const integration = await container.pactDev.register({
       ownerId: String(body.ownerId),
       name: String(body.name),
       webhookUrl: String(body.webhookUrl),
+      version: body.version ? String(body.version) : undefined,
+      supportedCoreVersions: Array.isArray(body.supportedCoreVersions)
+        ? body.supportedCoreVersions.map(String)
+        : undefined,
     });
     return c.json(integration, 201);
   });
@@ -1683,6 +1728,20 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
       return error.getResponse();
     }
 
+    if (error instanceof AdapterOperationError) {
+      return c.json(
+        {
+          error: error.name,
+          message: error.message,
+          code: error.code,
+          retryable: error.retryable,
+          adapter: error.adapter,
+          operation: error.operation,
+        },
+        400,
+      );
+    }
+
     return c.json(
       {
         error: error.name,
@@ -1725,6 +1784,45 @@ function normalizeLimitValue(value: string | undefined, fallback: number, max: n
   return Math.min(max, Math.floor(parsed));
 }
 
+function parseOptionalBoundedIntegerQuery(
+  value: string | undefined,
+  label: string,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new HTTPException(400, {
+      message: `${label} must be an integer between ${minimum} and ${maximum}`,
+    });
+  }
+
+  return parsed;
+}
+
+function parseOptionalMinimumIntegerQuery(
+  value: string | undefined,
+  label: string,
+  minimum: number,
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum) {
+    throw new HTTPException(400, {
+      message: `${label} must be an integer greater than or equal to ${minimum}`,
+    });
+  }
+
+  return parsed;
+}
+
 function normalizeOffsetValue(value: string | undefined): number | undefined {
   if (value === undefined) {
     return undefined;
@@ -1763,6 +1861,20 @@ function parseGovernanceVoteChoice(
 
 function isSettlementRecordStatus(value?: string): value is "applied" | "reconciled" {
   return value === "applied" || value === "reconciled";
+}
+
+function isSettlementRecordConnector(
+  value?: string,
+): value is "llm_token_metering" | "cloud_credit_billing" | "api_quota_allocation" {
+  return (
+    value === "llm_token_metering" ||
+    value === "cloud_credit_billing" ||
+    value === "api_quota_allocation"
+  );
+}
+
+function isReconciliationQueueState(value?: string): value is "pending" | "failed" | "all" {
+  return value === "pending" || value === "failed" || value === "all";
 }
 
 function rethrowParticipantNotFound(error: unknown): never {

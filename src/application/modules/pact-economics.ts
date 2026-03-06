@@ -77,14 +77,14 @@ export interface SettlementPlan {
 export interface ExecuteSettlementInput {
   model: CompensationModel;
   settlementId?: string;
-  idempotencyKey?: string;
+  idempotencyKey: string;
 }
 
 export interface SettlementExecutionResult {
   settlementId: string;
   executedAt: number;
   records: SettlementRecord[];
-  idempotencyKey?: string;
+  idempotencyKey: string;
 }
 
 export interface ConnectorHealthReport extends SettlementConnectorHealth {
@@ -96,6 +96,13 @@ export type ListSettlementRecordsFilter = SettlementRecordQueryFilter;
 export type QuerySettlementRecordsInput = SettlementRecordQueryFilter & SettlementRecordPageRequest;
 export type ReplaySettlementRecordLifecycleInput = SettlementRecordReplayRequest;
 export { type SettlementRecord } from "../settlement-records";
+
+export interface FailedSettlementExecution {
+  settlementId: string;
+  idempotencyKey: string;
+  failedAt: number;
+  error: string;
+}
 
 export interface ReconcileSettlementRecordRequest extends ReconcileSettlementRecordInput {
   recordId: string;
@@ -120,6 +127,7 @@ export class PactEconomics {
   private readonly valuations = new Map<string, ValuationRecord>();
   private readonly executionFingerprints = new Map<string, string>();
   private readonly executionResults = new Map<string, SettlementExecutionResult>();
+  private readonly failedExecutions = new Map<string, FailedSettlementExecution>();
   private readonly settlementRecordRepository: SettlementRecordRepository;
   private readonly eventBus?: EventBus;
   private readonly settlementConnectors?: Partial<SettlementConnectors>;
@@ -282,99 +290,102 @@ export class PactEconomics {
     }
 
     const settlementId = input.settlementId ?? generateId("settlement");
+    const idempotencyKey = this.normalizeIdempotencyKey(input.idempotencyKey);
     const executionFingerprint = this.createExecutionFingerprint(settlementId, input.model);
 
-    if (input.idempotencyKey) {
-      const existingFingerprint = this.executionFingerprints.get(input.idempotencyKey);
-      if (existingFingerprint && existingFingerprint !== executionFingerprint) {
-        throw new Error(`idempotency key reuse with different settlement payload: ${input.idempotencyKey}`);
-      }
-
-      const existingResult = this.executionResults.get(input.idempotencyKey);
-      if (existingResult) {
-        return this.cloneExecutionResult(existingResult);
-      }
-
-      this.executionFingerprints.set(input.idempotencyKey, executionFingerprint);
+    const existingFingerprint = this.executionFingerprints.get(idempotencyKey);
+    if (existingFingerprint && existingFingerprint !== executionFingerprint) {
+      throw new Error(`idempotency key reuse with different settlement payload: ${idempotencyKey}`);
     }
 
-    const records: SettlementRecord[] = [];
-    const legs = [...input.model.legs].sort((a, b) => a.id.localeCompare(b.id));
+    const existingResult = this.executionResults.get(idempotencyKey);
+    if (existingResult) {
+      return this.cloneExecutionResult(existingResult);
+    }
 
-    for (const leg of legs) {
-      const asset = this.assets.get(leg.assetId);
-      if (!asset) {
-        throw new Error(`unknown asset in settlement execution: ${leg.assetId}`);
-      }
+    this.executionFingerprints.set(idempotencyKey, executionFingerprint);
 
-      const rail = this.resolveSettlementRail(asset.kind);
-      if (rail === "onchain_stablecoin" || rail === "custom") {
-        continue;
-      }
+    try {
+      const records: SettlementRecord[] = [];
+      const legs = [...input.model.legs].sort((a, b) => a.id.localeCompare(b.id));
 
-      const recordId = input.idempotencyKey
-        ? this.createIdempotentRecordId(input.idempotencyKey, leg.id)
-        : generateId("settlement-record");
-      if (input.idempotencyKey) {
+      for (const leg of legs) {
+        const asset = this.assets.get(leg.assetId);
+        if (!asset) {
+          throw new Error(`unknown asset in settlement execution: ${leg.assetId}`);
+        }
+
+        const rail = this.resolveSettlementRail(asset.kind);
+        if (rail === "onchain_stablecoin" || rail === "custom") {
+          continue;
+        }
+
+        const recordId = this.createIdempotentRecordId(idempotencyKey, leg.id);
         const existingRecord = await this.settlementRecordRepository.getById(recordId);
         if (existingRecord) {
           records.push(existingRecord);
           continue;
         }
+
+        const request: SettlementConnectorRequest = {
+          settlementId,
+          recordId,
+          legId: leg.id,
+          assetId: leg.assetId,
+          payerId: leg.payerId,
+          payeeId: leg.payeeId,
+          amount: leg.amount,
+          unit: leg.unit,
+          idempotencyKey: this.createLegIdempotencyKey(idempotencyKey, leg.id),
+        };
+
+        const connectorResult = await this.applyConnectorByRail(rail, request);
+        const record: SettlementRecord = {
+          id: recordId,
+          settlementId,
+          legId: leg.id,
+          assetId: leg.assetId,
+          rail,
+          connector: connectorResult.connector,
+          payerId: leg.payerId,
+          payeeId: leg.payeeId,
+          amount: leg.amount,
+          unit: leg.unit,
+          status: connectorResult.result.status,
+          externalReference: connectorResult.result.externalReference,
+          connectorMetadata: connectorResult.result.metadata,
+          createdAt: connectorResult.result.processedAt,
+        };
+
+        await this.settlementRecordRepository.append(record);
+        records.push(record);
+        await this.publishSettlementRecordCreated(settlementId, record);
       }
 
-      const request: SettlementConnectorRequest = {
+      const executedAt = Date.now();
+      await this.publishSettlementExecuted(settlementId, records.length, executedAt);
+
+      const result: SettlementExecutionResult = {
         settlementId,
-        recordId,
-        legId: leg.id,
-        assetId: leg.assetId,
-        payerId: leg.payerId,
-        payeeId: leg.payeeId,
-        amount: leg.amount,
-        unit: leg.unit,
-        idempotencyKey: input.idempotencyKey
-          ? this.createLegIdempotencyKey(input.idempotencyKey, leg.id)
-          : undefined,
+        executedAt,
+        records,
+        idempotencyKey,
       };
 
-      const connectorResult = await this.applyConnectorByRail(rail, request);
-      const record: SettlementRecord = {
-        id: recordId,
+      this.executionResults.set(idempotencyKey, this.cloneExecutionResult(result));
+      this.failedExecutions.delete(idempotencyKey);
+
+      return this.cloneExecutionResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.failedExecutions.set(idempotencyKey, {
         settlementId,
-        legId: leg.id,
-        assetId: leg.assetId,
-        rail,
-        connector: connectorResult.connector,
-        payerId: leg.payerId,
-        payeeId: leg.payeeId,
-        amount: leg.amount,
-        unit: leg.unit,
-        status: connectorResult.result.status,
-        externalReference: connectorResult.result.externalReference,
-        connectorMetadata: connectorResult.result.metadata,
-        createdAt: connectorResult.result.processedAt,
-      };
-
-      await this.settlementRecordRepository.append(record);
-      records.push(record);
-      await this.publishSettlementRecordCreated(settlementId, record);
+        idempotencyKey,
+        failedAt: Date.now(),
+        error: message,
+      });
+      throw error instanceof Error ? error : new Error(message);
     }
-
-    const executedAt = Date.now();
-    await this.publishSettlementExecuted(settlementId, records.length, executedAt);
-
-    const result: SettlementExecutionResult = {
-      settlementId,
-      executedAt,
-      records,
-      idempotencyKey: input.idempotencyKey,
-    };
-
-    if (input.idempotencyKey) {
-      this.executionResults.set(input.idempotencyKey, this.cloneExecutionResult(result));
-    }
-
-    return this.cloneExecutionResult(result);
   }
 
   getConnectorHealth(): ConnectorHealthReport[] {
@@ -395,6 +406,21 @@ export class PactEconomics {
         this.settlementConnectors?.apiQuotaAllocation,
       ),
     ];
+  }
+
+  resetConnectorHealth(connector: SettlementRecord["connector"]): ConnectorHealthReport {
+    const managedConnector = this.getManagedConnector(connector);
+    managedConnector.resetHealth();
+
+    if (connector === "llm_token_metering") {
+      return this.buildConnectorHealth("llm_metering", connector, managedConnector);
+    }
+
+    if (connector === "cloud_credit_billing") {
+      return this.buildConnectorHealth("cloud_billing", connector, managedConnector);
+    }
+
+    return this.buildConnectorHealth("api_quota", connector, managedConnector);
   }
 
   async listSettlementRecords(filter?: ListSettlementRecordsFilter): Promise<SettlementRecord[]> {
@@ -437,6 +463,20 @@ export class PactEconomics {
     input: ReplaySettlementRecordLifecycleInput = {},
   ): Promise<SettlementRecordReplayPage> {
     return this.settlementRecordRepository.replay(input);
+  }
+
+  listFailedSettlementExecutions(): FailedSettlementExecution[] {
+    return [...this.failedExecutions.values()]
+      .map((entry) => ({ ...entry }))
+      .sort((left, right) => {
+        if (left.failedAt === right.failedAt) {
+          if (left.settlementId === right.settlementId) {
+            return left.idempotencyKey.localeCompare(right.idempotencyKey);
+          }
+          return left.settlementId.localeCompare(right.settlementId);
+        }
+        return left.failedAt - right.failedAt;
+      });
   }
 
   async reconcileSettlementRecord(
@@ -520,11 +560,18 @@ export class PactEconomics {
       return {
         rail,
         connector: connectorName,
-        state: "unhealthy",
+        state: "open",
         retryPolicy: {
           maxRetries: 0,
           backoffMs: 0,
         },
+        circuitBreaker: {
+          failureThreshold: 0,
+          cooldownMs: 0,
+        },
+        consecutiveFailures: 1,
+        lastFailureAt: Date.now(),
+        lastError: `missing connector: ${connectorName}`,
         lastFailure: {
           attempt: 0,
           failedAt: Date.now(),
@@ -595,6 +642,19 @@ export class PactEconomics {
 
   private normalizeIdempotencyComponent(value: string): string {
     return value.replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 80);
+  }
+
+  private normalizeIdempotencyKey(value: string): string {
+    if (typeof value !== "string") {
+      throw new Error("idempotencyKey is required");
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error("idempotencyKey is required");
+    }
+
+    return trimmed;
   }
 
   private cloneExecutionResult(result: SettlementExecutionResult): SettlementExecutionResult {

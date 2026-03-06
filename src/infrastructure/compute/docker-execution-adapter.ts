@@ -1,5 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import type { ComputeExecutionAdapter, ScheduledJob } from "../../application/contracts";
+import type {
+  ComputeDispatchOptions,
+  RuntimeAwareComputeExecutionAdapter,
+  ScheduledJob,
+} from "../../application/contracts";
+import { ComputeAdapterError, type AdapterHealthReport } from "../../application/adapter-runtime";
 import { generateId } from "../../application/utils";
 import type { ComputeJobResult, ComputeProvider, ComputeUsageRecord } from "../../domain/types";
 
@@ -13,7 +18,7 @@ interface ProcessCompletion {
   signal: NodeJS.Signals | null;
 }
 
-export class DockerExecutionAdapter implements ComputeExecutionAdapter {
+export class DockerExecutionAdapter implements RuntimeAwareComputeExecutionAdapter {
   private readonly dockerBinary: string;
   private readonly timeout: number;
 
@@ -71,6 +76,12 @@ export class DockerExecutionAdapter implements ComputeExecutionAdapter {
           error: `Docker execution timed out after ${this.timeout}ms`,
           usage,
           completedAt: Date.now(),
+          execution: {
+            terminalState: "timed_out",
+            attemptCount: 1,
+            retryableFailure: true,
+            lastErrorCode: "execution_timeout",
+          },
         };
       }
 
@@ -82,6 +93,10 @@ export class DockerExecutionAdapter implements ComputeExecutionAdapter {
           output: stdout,
           usage,
           completedAt: Date.now(),
+          execution: {
+            terminalState: "completed",
+            attemptCount: 1,
+          },
         };
       }
 
@@ -94,6 +109,12 @@ export class DockerExecutionAdapter implements ComputeExecutionAdapter {
         error: `Docker exited with code ${completion.code ?? "null"}${signalSuffix}${suffix}`,
         usage,
         completedAt: Date.now(),
+        execution: {
+          terminalState: "failed",
+          attemptCount: 1,
+          retryableFailure: false,
+          lastErrorCode: "docker_exit_non_zero",
+        },
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -104,6 +125,51 @@ export class DockerExecutionAdapter implements ComputeExecutionAdapter {
         : `Docker execution failed: ${errorMessage}`;
       return this.createFailedResult(job.id, provider, durationSeconds, message);
     }
+  }
+
+  async executeWithRuntime(
+    job: ScheduledJob,
+    provider: ComputeProvider,
+    runtime: ComputeDispatchOptions,
+  ): Promise<ComputeJobResult> {
+    if (runtime.signal?.aborted) {
+      throw new ComputeAdapterError("Docker execution cancelled", {
+        operation: "execute",
+        code: "execution_cancelled",
+        retryable: false,
+      });
+    }
+
+    await runtime.onCheckpoint?.({
+      jobId: job.id,
+      providerId: provider.id,
+      attempt: 1,
+      state: "running",
+      createdAt: Date.now(),
+      message: "Docker container starting",
+    });
+    return this.execute(job, provider);
+  }
+
+  async cancel(): Promise<boolean> {
+    return true;
+  }
+
+  getHealth(): AdapterHealthReport {
+    return {
+      name: "compute-execution-adapter",
+      state: "healthy",
+      checkedAt: Date.now(),
+      durable: false,
+      durability: "memory",
+      features: {
+        runtimeAware: true,
+        checkpointing: true,
+        cancellation: true,
+        retries: true,
+        timeout: true,
+      },
+    };
   }
 
   protected spawnProcess(args: string[]): ChildProcessWithoutNullStreams {
@@ -182,6 +248,12 @@ export class DockerExecutionAdapter implements ComputeExecutionAdapter {
       error,
       usage: this.createUsage(jobId, provider, durationSeconds),
       completedAt: Date.now(),
+      execution: {
+        terminalState: "failed",
+        attemptCount: 1,
+        retryableFailure: false,
+        lastErrorCode: "docker_execution_failed",
+      },
     };
   }
 
