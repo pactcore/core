@@ -1,13 +1,14 @@
 {
   "active": true,
-  "iteration": 64,
+  "iteration": 65,
   "minIterations": 1,
   "maxIterations": 0,
-  "completionPromise": "COMPLETE",
+  "completionPromise": "WHITEPAPER_SCOPE_COMPLETE",
+  "abortPromise": "EXTERNAL_BLOCKER",
   "tasksMode": false,
   "taskPromise": "READY_FOR_NEXT_TASK",
   "prompt": "You are continuing the PACT whitepaper implementation in the `pact-network-core-bun` repository.\n\nMission:\n- Keep iterating until the remaining core whitepaper gaps are closed as far as this repo is concerned.\n- Do real code work, not just planning.\n- Prefer shipping tested increments with commits over large risky rewrites.\n\nCurrent priority gaps to close:\n1. Appendix C production-facing prover/verifier bridge and artifact integrity pipeline.\n2. Live-facing provider-auth settlement connectors and onchain bridge hardening.\n3. Managed backend adapter contracts for PactData, PactCompute, and PactDev.\n4. Any remaining production-hardening gaps that are clearly still open in this repo.\n\nExecution rules:\n- Start by checking git status, recent commits, and the most relevant code/tests.\n- Make the smallest useful slice of progress you can land this iteration.\n- Run targeted tests while iterating; run `bun test` before any commit.\n- If tests pass and the change is meaningful, commit and push to `origin/main`.\n- If one path is blocked, switch to another unresolved gap instead of stalling.\n- Do not stop to ask questions; infer the best next step from the codebase.\n- Do not output the completion promise until there are no obvious unresolved whitepaper-scope gaps left in this repo and tests pass.\n\nCompletion promise:\n<promise>WHITEPAPER_SCOPE_COMPLETE</promise>\n\nAbort promise if a hard external blocker makes further progress impossible:\n<promise>EXTERNAL_BLOCKER</promise>\n",
-  "startedAt": "2026-03-10T17:48:44.599Z",
+  "startedAt": "2026-03-10T17:50:06.530Z",
   "model": "gpt-5.4",
   "agent": "codex"
 }
