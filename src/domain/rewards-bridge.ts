@@ -5,6 +5,7 @@ import {
   submitSignedTransaction,
   type TransactionSigner,
 } from "../blockchain/providers";
+import { FetchRpcProvider } from "../infrastructure/blockchain/fetch-rpc-provider";
 import {
   MockRpcProvider,
   type RpcProvider,
@@ -62,6 +63,7 @@ export interface SyncRewardClaimStatusInput {
 }
 
 export interface RewardsBridgeConfig {
+  rpcUrl?: string;
   contractAddress?: string;
   signerPrivateKey?: string;
   signer?: TransactionSigner;
@@ -80,7 +82,8 @@ export class MockEvmRewardsBridge {
   private txCounter = 0;
 
   constructor(config: RewardsBridgeConfig = {}) {
-    this.rpcProvider = config.rpcProvider ?? new MockRpcProvider();
+    this.rpcProvider = config.rpcProvider
+      ?? (config.rpcUrl ? new FetchRpcProvider({ rpcUrl: config.rpcUrl }) : new MockRpcProvider());
     this.signer = resolveTransactionSigner(
       config.signer,
       config.signerPrivateKey,
@@ -91,7 +94,10 @@ export class MockEvmRewardsBridge {
       config.contractAddress ?? DEFAULT_REWARDS_CONTRACT_ADDRESS,
     );
 
-    if (this.rpcProvider instanceof MockRpcProvider) {
+    if (
+      this.rpcProvider instanceof MockRpcProvider
+      && !this.rpcProvider.hasConfiguredResponse("eth_sendRawTransaction")
+    ) {
       this.rpcProvider.setMethodResponse("eth_sendRawTransaction", () => {
         this.txCounter += 1;
         return `0xrewardtx-${this.txCounter}`;

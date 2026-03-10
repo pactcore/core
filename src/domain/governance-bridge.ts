@@ -5,6 +5,7 @@ import {
   submitSignedTransaction,
   type TransactionSigner,
 } from "../blockchain/providers";
+import { FetchRpcProvider } from "../infrastructure/blockchain/fetch-rpc-provider";
 import {
   MockRpcProvider,
   type RpcProvider,
@@ -82,6 +83,7 @@ export interface ExecuteGovernanceProposalInput {
 }
 
 export interface GovernanceBridgeConfig {
+  rpcUrl?: string;
   contractAddress?: string;
   signerPrivateKey?: string;
   signer?: TransactionSigner;
@@ -104,7 +106,8 @@ export class MockEvmGovernanceBridge {
   private proposalSequence = 0;
 
   constructor(config: GovernanceBridgeConfig = {}) {
-    this.rpcProvider = config.rpcProvider ?? new MockRpcProvider();
+    this.rpcProvider = config.rpcProvider
+      ?? (config.rpcUrl ? new FetchRpcProvider({ rpcUrl: config.rpcUrl }) : new MockRpcProvider());
     this.signer = resolveTransactionSigner(
       config.signer,
       config.signerPrivateKey,
@@ -115,7 +118,10 @@ export class MockEvmGovernanceBridge {
       config.contractAddress ?? DEFAULT_GOVERNANCE_CONTRACT_ADDRESS,
     );
 
-    if (this.rpcProvider instanceof MockRpcProvider) {
+    if (
+      this.rpcProvider instanceof MockRpcProvider
+      && !this.rpcProvider.hasConfiguredResponse("eth_sendRawTransaction")
+    ) {
       this.rpcProvider.setMethodResponse("eth_sendRawTransaction", () => {
         this.txCounter += 1;
         return `0xgovtx-${this.txCounter}`;

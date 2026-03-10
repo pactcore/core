@@ -67,6 +67,8 @@ import { InMemoryPluginInstallRepository } from "../infrastructure/dev/in-memory
 import { InMemoryPluginRevenueShareRepository } from "../infrastructure/dev/in-memory-plugin-revenue-share-repository";
 import { InMemoryAntiSpamRateLimitStore } from "../infrastructure/anti-spam/in-memory-anti-spam-rate-limit-store";
 import { createManagedBackendInventoryFromEnv } from "../infrastructure/managed/default-managed-backends";
+import { MockEvmGovernanceBridge } from "../domain/governance-bridge";
+import { MockEvmRewardsBridge } from "../domain/rewards-bridge";
 import { PactOrchestrator } from "./orchestrator";
 import type { ManagedBackendInventory } from "./managed-backends";
 import { PactAntiSpam } from "./modules/pact-anti-spam";
@@ -90,6 +92,8 @@ import { PactAnalytics } from "./modules/pact-analytics";
 import { PactEcosystem } from "./modules/pact-ecosystem";
 import type { SettlementConnectorTransport } from "./settlement-connectors";
 import { OnchainFinalityRuntime, type OnchainFinalityProvider } from "../domain/onchain-finality";
+import type { RpcProvider } from "../infrastructure/blockchain/mock-rpc-provider";
+import type { TransactionSigner } from "../blockchain/providers";
 
 export interface PactContainer {
   pactAntiSpam: PactAntiSpam;
@@ -145,6 +149,8 @@ export interface PactContainerEnvironment {
   PACT_EVM_RPC_URL?: string;
   PACT_IDENTITY_SBT_ADDRESS?: string;
   PACT_EVM_PRIVATE_KEY?: string;
+  PACT_GOVERNANCE_CONTRACT_ADDRESS?: string;
+  PACT_REWARDS_CONTRACT_ADDRESS?: string;
   PACT_ONCHAIN_CONFIRMATION_DEPTH?: string;
   PACT_ONCHAIN_FINALITY_DEPTH?: string;
   PACT_LLM_SETTLEMENT_PROFILE_JSON?: string;
@@ -185,6 +191,8 @@ export interface CreateContainerOptions {
   managedBackends?: ManagedBackendInventory;
   settlementTransport?: SettlementConnectorTransport;
   onchainFinalityProvider?: OnchainFinalityProvider;
+  onchainRpcProvider?: RpcProvider;
+  onchainSigner?: TransactionSigner;
 }
 
 export function createContainer(
@@ -368,9 +376,27 @@ export function createContainer(
   const pactDev = new PactDev(policyRegistry, templateRepository, {
     runtimeVersion: "0.2.0",
   }, managedBackends.dev);
+  const governanceBridge = env.PACT_EVM_RPC_URL || options.onchainRpcProvider
+    ? new MockEvmGovernanceBridge({
+        rpcUrl: env.PACT_EVM_RPC_URL,
+        rpcProvider: options.onchainRpcProvider,
+        signerPrivateKey: env.PACT_EVM_PRIVATE_KEY,
+        signer: options.onchainSigner,
+        contractAddress: env.PACT_GOVERNANCE_CONTRACT_ADDRESS,
+      })
+    : undefined;
+  const rewardsBridge = env.PACT_EVM_RPC_URL || options.onchainRpcProvider
+    ? new MockEvmRewardsBridge({
+        rpcUrl: env.PACT_EVM_RPC_URL,
+        rpcProvider: options.onchainRpcProvider,
+        signerPrivateKey: env.PACT_EVM_PRIVATE_KEY,
+        signer: options.onchainSigner,
+        contractAddress: env.PACT_REWARDS_CONTRACT_ADDRESS,
+      })
+    : undefined;
   const pactOnchain = new PactOnchain(
-    undefined,
-    undefined,
+    governanceBridge,
+    rewardsBridge,
     options.onchainFinalityProvider ?? new OnchainFinalityRuntime({
       confirmationDepth: parseIntegerEnv(env.PACT_ONCHAIN_CONFIRMATION_DEPTH, 2),
       finalityDepth: parseIntegerEnv(env.PACT_ONCHAIN_FINALITY_DEPTH, 6),

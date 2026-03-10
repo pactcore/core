@@ -40,6 +40,14 @@ export class MockRpcProvider implements RpcProvider {
     return this;
   }
 
+  hasConfiguredResponse(method: string, params?: unknown[]): boolean {
+    if (params !== undefined) {
+      return this.exactResponses.has(this.exactKey(method, params));
+    }
+
+    return this.methodResponses.has(method);
+  }
+
   getCalls(method?: string): RpcRequest[] {
     if (!method) {
       return [...this.callHistory];

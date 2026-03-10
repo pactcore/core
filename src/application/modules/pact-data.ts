@@ -146,8 +146,10 @@ export class PactData {
     isPublic: boolean,
   ): Promise<DataAccessPolicy> {
     return this.withDataAdapterError("set_access_policy", async () => {
+      const recordedAt = Date.now();
       const policy: DataAccessPolicy = { assetId, allowedParticipantIds, isPublic };
       await this.accessPolicyRepository.save(policy);
+      await this.syncManagedAccessPolicy(policy, recordedAt, "set");
       return policy;
     });
   }
@@ -184,6 +186,7 @@ export class PactData {
       };
 
       await this.getListingRepository().save(listing);
+      await this.syncManagedListing(listing, listing.listedAt, "listed");
       return listing;
     });
   }
@@ -196,10 +199,12 @@ export class PactData {
         throw new Error(`Listing ${listingId} not found`);
       }
 
-      await listingRepository.save({
+      const updatedListing = {
         ...listing,
         active: false,
-      });
+      };
+      await listingRepository.save(updatedListing);
+      await this.syncManagedListing(updatedListing, Date.now(), "delisted");
     });
   }
 
@@ -227,7 +232,8 @@ export class PactData {
       };
 
       await purchaseRepository.save(purchase);
-      await this.grantBuyerAccess(listing.assetId, buyerId);
+      const policy = await this.grantBuyerAccess(listing.assetId, buyerId);
+      await this.syncManagedPurchase(purchase, listing, policy);
       return purchase;
     });
   }
@@ -402,25 +408,28 @@ export class PactData {
     return this.purchaseRepository;
   }
 
-  private async grantBuyerAccess(assetId: string, buyerId: string): Promise<void> {
+  private async grantBuyerAccess(assetId: string, buyerId: string): Promise<DataAccessPolicy> {
     const existingPolicy = await this.accessPolicyRepository.getByAsset(assetId);
     if (!existingPolicy) {
-      await this.accessPolicyRepository.save({
+      const policy = {
         assetId,
         allowedParticipantIds: [buyerId],
         isPublic: false,
-      });
-      return;
+      };
+      await this.accessPolicyRepository.save(policy);
+      return policy;
     }
 
     if (existingPolicy.allowedParticipantIds.includes(buyerId)) {
-      return;
+      return existingPolicy;
     }
 
-    await this.accessPolicyRepository.save({
+    const updatedPolicy = {
       ...existingPolicy,
       allowedParticipantIds: [...existingPolicy.allowedParticipantIds, buyerId],
-    });
+    };
+    await this.accessPolicyRepository.save(updatedPolicy);
+    return updatedPolicy;
   }
 
   private async syncManagedPublication(
@@ -445,19 +454,7 @@ export class PactData {
       },
     });
 
-    await this.managedBackends.store?.put({
-      key: `asset:${asset.id}`,
-      value: {
-        asset,
-        accessPolicy: policy,
-        derivedFrom,
-      },
-      updatedAt: createdAt,
-      metadata: {
-        ownerId: asset.ownerId,
-        recordType: "asset_publication",
-      },
-    });
+    await this.storeManagedAssetSnapshot(asset, policy, derivedFrom, createdAt);
 
     await this.managedBackends.observability?.recordMetric({
       name: "data.assets.published",
@@ -480,6 +477,195 @@ export class PactData {
         assetId: asset.id,
         ownerId: asset.ownerId,
         derivedFromCount: derivedFrom.length,
+      },
+    });
+  }
+
+  private async syncManagedAccessPolicy(
+    policy: DataAccessPolicy,
+    recordedAt: number,
+    source: "set" | "purchase_grant",
+  ): Promise<void> {
+    await this.managedBackends.queue?.enqueue({
+      id: `data-policy:${policy.assetId}:${source}:${recordedAt}`,
+      topic: "data.policy.update",
+      payload: {
+        assetId: policy.assetId,
+        allowedParticipantIds: [...policy.allowedParticipantIds],
+        isPublic: policy.isPublic,
+        source,
+      },
+      createdAt: recordedAt,
+      metadata: {
+        assetId: policy.assetId,
+        source,
+      },
+    });
+
+    await this.managedBackends.store?.put({
+      key: `policy:${policy.assetId}`,
+      value: policy,
+      updatedAt: recordedAt,
+      metadata: {
+        assetId: policy.assetId,
+        isPublic: String(policy.isPublic),
+        recordType: "access_policy",
+      },
+    });
+
+    await this.refreshManagedAssetSnapshot(policy.assetId, policy, recordedAt);
+
+    await this.managedBackends.observability?.recordMetric({
+      name: "data.access_policy.updates",
+      type: "counter",
+      value: 1,
+      recordedAt,
+      labels: {
+        isPublic: String(policy.isPublic),
+        source,
+      },
+    });
+
+    await this.managedBackends.observability?.recordTrace({
+      traceId: `data-policy:${policy.assetId}`,
+      spanId: source,
+      name: "data.policy.update",
+      startedAt: recordedAt,
+      endedAt: Date.now(),
+      status: "ok",
+      attributes: {
+        assetId: policy.assetId,
+        source,
+        allowedParticipants: policy.allowedParticipantIds.length,
+        isPublic: policy.isPublic,
+      },
+    });
+  }
+
+  private async syncManagedListing(
+    listing: DataListing,
+    recordedAt: number,
+    action: "listed" | "delisted",
+  ): Promise<void> {
+    await this.managedBackends.queue?.enqueue({
+      id: `data-listing:${listing.id}:${action}:${recordedAt}`,
+      topic: "data.marketplace.listing",
+      payload: {
+        action,
+        listingId: listing.id,
+        assetId: listing.assetId,
+        sellerId: listing.sellerId,
+        priceCents: listing.priceCents,
+        category: listing.category,
+        active: listing.active,
+      },
+      createdAt: recordedAt,
+      metadata: {
+        listingId: listing.id,
+        action,
+      },
+    });
+
+    await this.managedBackends.store?.put({
+      key: `listing:${listing.id}`,
+      value: listing,
+      updatedAt: recordedAt,
+      metadata: {
+        assetId: listing.assetId,
+        sellerId: listing.sellerId,
+        recordType: "marketplace_listing",
+      },
+    });
+
+    await this.managedBackends.observability?.recordMetric({
+      name: "data.marketplace.listings",
+      type: "counter",
+      value: 1,
+      recordedAt,
+      labels: {
+        action,
+        category: listing.category,
+        active: String(listing.active),
+      },
+    });
+
+    await this.managedBackends.observability?.recordTrace({
+      traceId: `data-listing:${listing.id}`,
+      spanId: action,
+      name: "data.marketplace.listing",
+      startedAt: recordedAt,
+      endedAt: Date.now(),
+      status: "ok",
+      attributes: {
+        listingId: listing.id,
+        assetId: listing.assetId,
+        sellerId: listing.sellerId,
+        category: listing.category,
+        active: listing.active,
+      },
+    });
+  }
+
+  private async syncManagedPurchase(
+    purchase: DataPurchase,
+    listing: DataListing,
+    policy: DataAccessPolicy,
+  ): Promise<void> {
+    await this.managedBackends.queue?.enqueue({
+      id: `data-purchase:${purchase.id}`,
+      topic: "data.marketplace.purchase",
+      payload: {
+        purchaseId: purchase.id,
+        listingId: purchase.listingId,
+        assetId: purchase.assetId,
+        buyerId: purchase.buyerId,
+        sellerId: listing.sellerId,
+        priceCents: purchase.priceCents,
+      },
+      createdAt: purchase.purchasedAt,
+      metadata: {
+        purchaseId: purchase.id,
+        assetId: purchase.assetId,
+      },
+    });
+
+    await this.managedBackends.store?.put({
+      key: `purchase:${purchase.id}`,
+      value: purchase,
+      updatedAt: purchase.purchasedAt,
+      metadata: {
+        assetId: purchase.assetId,
+        buyerId: purchase.buyerId,
+        recordType: "marketplace_purchase",
+      },
+    });
+
+    await this.syncManagedAccessPolicy(policy, purchase.purchasedAt, "purchase_grant");
+
+    await this.managedBackends.observability?.recordMetric({
+      name: "data.marketplace.purchases",
+      type: "counter",
+      value: 1,
+      recordedAt: purchase.purchasedAt,
+      labels: {
+        assetId: purchase.assetId,
+        buyerId: purchase.buyerId,
+      },
+    });
+
+    await this.managedBackends.observability?.recordTrace({
+      traceId: `data-purchase:${purchase.id}`,
+      spanId: "purchase",
+      name: "data.marketplace.purchase",
+      startedAt: purchase.purchasedAt,
+      endedAt: Date.now(),
+      status: "ok",
+      attributes: {
+        purchaseId: purchase.id,
+        listingId: purchase.listingId,
+        assetId: purchase.assetId,
+        buyerId: purchase.buyerId,
+        priceCents: purchase.priceCents,
       },
     });
   }
@@ -516,6 +702,43 @@ export class PactData {
       attributes: {
         assetId: proof.assetId,
         algorithm: proof.algorithm,
+      },
+    });
+  }
+
+  private async refreshManagedAssetSnapshot(
+    assetId: string,
+    policy: DataAccessPolicy,
+    updatedAt: number,
+  ): Promise<void> {
+    const asset = await this.assetRepository.getById(assetId);
+    if (!asset) {
+      return;
+    }
+
+    const derivedFrom = (await this.provenanceGraph.getLineage(assetId))
+      .filter((edge) => edge.childId === assetId)
+      .map((edge) => edge.parentId);
+    await this.storeManagedAssetSnapshot(asset, policy, derivedFrom, updatedAt);
+  }
+
+  private async storeManagedAssetSnapshot(
+    asset: DataAsset,
+    policy: DataAccessPolicy,
+    derivedFrom: string[],
+    updatedAt: number,
+  ): Promise<void> {
+    await this.managedBackends.store?.put({
+      key: `asset:${asset.id}`,
+      value: {
+        asset,
+        accessPolicy: policy,
+        derivedFrom,
+      },
+      updatedAt,
+      metadata: {
+        ownerId: asset.ownerId,
+        recordType: "asset_publication",
       },
     });
   }

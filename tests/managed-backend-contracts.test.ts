@@ -341,6 +341,103 @@ describe("managed backend contracts", () => {
     expect(observabilityHealth?.features?.bufferedTraces).toBe(1);
   });
 
+  it("routes PactData marketplace and policy lifecycle through managed adapters", async () => {
+    const queue = new RemoteHttpManagedQueueAdapterSkeleton({
+      domain: "data",
+      profile: {
+        backendId: "managed-data-queue",
+        providerId: "managed-data",
+        endpoint: "https://managed.example.com/data/queue",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["token"],
+      },
+    });
+    const store = new RemoteHttpManagedStoreAdapterSkeleton<unknown>({
+      domain: "data",
+      profile: {
+        backendId: "managed-data-store",
+        providerId: "managed-data",
+        endpoint: "https://managed.example.com/data/store",
+        credentialSchema: {
+          type: "api_key",
+          fields: [{ key: "apiKey", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["apiKey"],
+      },
+    });
+    const observability = new RemoteHttpManagedObservabilityAdapterSkeleton({
+      domain: "data",
+      profile: {
+        backendId: "managed-data-observability",
+        providerId: "managed-data",
+        endpoint: "https://managed.example.com/data/observability",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["token"],
+      },
+    });
+    const container = createContainer(undefined, {
+      managedBackends: {
+        data: {
+          queue,
+          store,
+          observability,
+        },
+      },
+    });
+
+    const asset = await container.pactData.publish({
+      ownerId: "seller-1",
+      title: "Managed marketplace asset",
+      uri: "cid://managed-marketplace-asset",
+      derivedFrom: ["raw-parent-1"],
+    });
+    await container.pactData.setAccessPolicy(asset.id, ["seller-1"], false);
+    const listing = await container.pactData.listAsset(asset.id, 950, "survey");
+    const purchase = await container.pactData.purchaseAsset(listing.id, "buyer-1");
+    await container.pactData.delistAsset(listing.id);
+
+    const assetRecord = await store.get(`asset:${asset.id}`);
+    const policyRecord = await store.get(`policy:${asset.id}`);
+    const listingRecord = await store.get(`listing:${listing.id}`);
+    const purchaseRecord = await store.get(`purchase:${purchase.id}`);
+    const backendHealth = await container.pactData.getManagedBackendHealth();
+    const queueHealth = backendHealth.backends.find((entry) => entry.capability === "queue");
+    const storeHealth = backendHealth.backends.find((entry) => entry.capability === "store");
+    const observabilityHealth = backendHealth.backends.find((entry) => entry.capability === "observability");
+
+    expect(queue.getDepth().available).toBe(6);
+    expect(assetRecord?.value).toMatchObject({
+      accessPolicy: {
+        assetId: asset.id,
+        allowedParticipantIds: ["seller-1", "buyer-1"],
+        isPublic: false,
+      },
+      derivedFrom: ["raw-parent-1"],
+    });
+    expect(policyRecord?.value).toEqual({
+      assetId: asset.id,
+      allowedParticipantIds: ["seller-1", "buyer-1"],
+      isPublic: false,
+    });
+    expect(listingRecord?.value).toMatchObject({
+      id: listing.id,
+      assetId: asset.id,
+      active: false,
+      category: "survey",
+    });
+    expect(purchaseRecord?.value).toEqual(purchase);
+    expect(queueHealth?.features?.queuedMessages).toBe(6);
+    expect(storeHealth?.features?.storedRecords).toBe(4);
+    expect(observabilityHealth?.features?.bufferedMetrics).toBe(6);
+    expect(observabilityHealth?.features?.bufferedTraces).toBe(6);
+  });
+
   it("routes PactCompute job lifecycle through managed queue, store, and observability adapters", async () => {
     const queue = new RemoteHttpManagedQueueAdapterSkeleton({
       domain: "compute",
@@ -698,8 +795,8 @@ describe("managed backend contracts", () => {
           providerId: "managed-compute",
           endpoint: "https://managed.example.com/compute/queue",
           credentialType: "bearer",
-          configuredCredentialFields: ["token"],
         }),
+        PACT_COMPUTE_QUEUE_BACKEND_CREDENTIAL_TOKEN: "compute-token",
         PACT_DEV_OBSERVABILITY_BACKEND_ENDPOINT: "https://managed.example.com/dev/observability",
         PACT_DEV_OBSERVABILITY_BACKEND_PROVIDER_ID: "managed-dev",
         PACT_DEV_OBSERVABILITY_BACKEND_CREDENTIAL_TYPE: "oauth2",
