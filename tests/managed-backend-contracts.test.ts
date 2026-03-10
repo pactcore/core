@@ -631,6 +631,86 @@ describe("managed backend contracts", () => {
     expect(observabilityHealth?.features?.bufferedTraces).toBe(4);
   });
 
+  it("accepts aliased managed backend credential fields for remote health contracts", async () => {
+    const computeQueue = new RemoteHttpManagedQueueAdapterSkeleton({
+      domain: "compute",
+      profile: {
+        backendId: "managed-compute-queue",
+        providerId: "managed-compute",
+        endpoint: "https://managed.example.com/compute/queue",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "access_token", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["accessToken"],
+      },
+    });
+    const devObservability = new RemoteHttpManagedObservabilityAdapterSkeleton({
+      domain: "dev",
+      profile: {
+        backendId: "managed-dev-observability",
+        providerId: "managed-dev",
+        endpoint: "https://managed.example.com/dev/observability",
+        credentialSchema: {
+          type: "service_account",
+          fields: [
+            { key: "token", required: true, secret: true },
+            { key: "email", required: false },
+            { key: "project_id", required: false },
+          ],
+        },
+        configuredCredentialFields: ["client_email", "projectId", "access_token"],
+      },
+    });
+    const container = createContainer(undefined, {
+      managedBackends: {
+        compute: {
+          queue: computeQueue,
+        },
+        dev: {
+          observability: devObservability,
+        },
+      },
+    });
+    const app = createApp(undefined, { container });
+
+    const computeResponse = await app.request("/compute/backends/health");
+    const computeBody = (await computeResponse.json()) as {
+      status: string;
+      backends: Array<{
+        capability: string;
+        state: string;
+        profile?: { configuredCredentialFields?: string[] };
+      }>;
+    };
+    const devResponse = await app.request("/dev/backends/health");
+    const devBody = (await devResponse.json()) as {
+      status: string;
+      backends: Array<{
+        capability: string;
+        state: string;
+        profile?: { configuredCredentialFields?: string[] };
+      }>;
+    };
+
+    expect(computeResponse.status).toBe(200);
+    expect(devResponse.status).toBe(200);
+    expect(computeBody.status).toBe("healthy");
+    expect(devBody.status).toBe("healthy");
+    expect(computeBody.backends.find((entry) => entry.capability === "queue")).toMatchObject({
+      state: "healthy",
+      profile: {
+        configuredCredentialFields: ["token"],
+      },
+    });
+    expect(devBody.backends.find((entry) => entry.capability === "observability")).toMatchObject({
+      state: "healthy",
+      profile: {
+        configuredCredentialFields: ["accessToken", "clientEmail", "projectId"],
+      },
+    });
+  });
+
   it("reports degraded remote managed backend health when credentials are incomplete", async () => {
     const dataStore = new RemoteHttpManagedStoreAdapterSkeleton<string>({
       domain: "data",
@@ -861,6 +941,71 @@ describe("managed backend contracts", () => {
         providerId: "managed-dev",
         credentialType: "oauth2",
         configuredCredentialFields: ["accessToken"],
+      },
+    });
+  });
+
+  it("canonicalizes aliased env-backed managed backend credential fields", async () => {
+    const container = createContainer(undefined, {
+      env: {
+        PACT_COMPUTE_QUEUE_BACKEND_ENDPOINT: "https://managed.example.com/compute/queue",
+        PACT_COMPUTE_QUEUE_BACKEND_PROVIDER_ID: "managed-compute",
+        PACT_COMPUTE_QUEUE_BACKEND_CREDENTIAL_TYPE: "bearer",
+        PACT_COMPUTE_QUEUE_BACKEND_CREDENTIAL_ACCESS_TOKEN: "compute-token",
+        PACT_DEV_OBSERVABILITY_BACKEND_PROFILE_JSON: JSON.stringify({
+          backendId: "managed-dev-observability",
+          providerId: "managed-dev",
+          endpoint: "https://managed.example.com/dev/observability",
+          credentialType: "service_account",
+          credentialSchema: {
+            fields: [
+              { key: "token", required: true, secret: true },
+              { key: "client_email", required: false },
+              { key: "project_id", required: false },
+            ],
+          },
+          configuredCredentialFields: ["email"],
+        }),
+        PACT_DEV_OBSERVABILITY_BACKEND_CREDENTIAL_TOKEN: "dev-token",
+        PACT_DEV_OBSERVABILITY_BACKEND_CREDENTIAL_EMAIL: "ops@managed.example.com",
+        PACT_DEV_OBSERVABILITY_BACKEND_CREDENTIAL_PROJECT_ID: "managed-dev-project",
+      },
+    });
+    const app = createApp(undefined, { container });
+
+    const computeResponse = await app.request("/compute/backends/health");
+    const computeBody = (await computeResponse.json()) as {
+      status: string;
+      backends: Array<{
+        capability: string;
+        state: string;
+        profile?: { configuredCredentialFields?: string[] };
+      }>;
+    };
+    const devResponse = await app.request("/dev/backends/health");
+    const devBody = (await devResponse.json()) as {
+      status: string;
+      backends: Array<{
+        capability: string;
+        state: string;
+        profile?: { configuredCredentialFields?: string[] };
+      }>;
+    };
+
+    expect(computeResponse.status).toBe(200);
+    expect(devResponse.status).toBe(200);
+    expect(computeBody.status).toBe("healthy");
+    expect(devBody.status).toBe("healthy");
+    expect(computeBody.backends.find((entry) => entry.capability === "queue")).toMatchObject({
+      state: "healthy",
+      profile: {
+        configuredCredentialFields: ["token"],
+      },
+    });
+    expect(devBody.backends.find((entry) => entry.capability === "observability")).toMatchObject({
+      state: "healthy",
+      profile: {
+        configuredCredentialFields: ["accessToken", "clientEmail", "projectId"],
       },
     });
   });

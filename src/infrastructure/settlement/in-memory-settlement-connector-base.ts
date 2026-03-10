@@ -493,6 +493,10 @@ export abstract class InMemorySettlementConnectorBase {
       displayName: profile.displayName,
       endpoint: profile.endpoint,
       credentialType: profile.credentialSchema.type,
+      requiredCredentialFields: profile.credentialSchema.fields
+        .filter((field) => field.required !== false)
+        .map((field) => field.key)
+        .sort((left, right) => left.localeCompare(right)),
       configuredCredentialFields: Object.keys(profile.credentials).sort((left, right) =>
         left.localeCompare(right),
       ),

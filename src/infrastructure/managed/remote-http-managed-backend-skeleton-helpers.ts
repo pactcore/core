@@ -1,5 +1,7 @@
 import type { AdapterDurability, AdapterHealthState } from "../../application/adapter-runtime";
 import {
+  normalizeManagedBackendConfiguredCredentialFields,
+  normalizeManagedBackendCredentialKey,
   summarizeManagedBackendProfile,
   type ManagedBackendCapability,
   type ManagedBackendDomain,
@@ -10,15 +12,23 @@ import {
 export const REMOTE_MANAGED_BACKEND_DURABILITY: AdapterDurability = "remote";
 
 export function cloneManagedBackendProfile(profile: ManagedBackendProfile): ManagedBackendProfile {
+  const credentialType = profile.credentialSchema?.type ?? "none";
+
   return {
     ...profile,
     credentialSchema: profile.credentialSchema
       ? {
           ...profile.credentialSchema,
-          fields: profile.credentialSchema.fields.map((field) => ({ ...field })),
+          fields: profile.credentialSchema.fields.map((field) => ({
+            ...field,
+            key: normalizeManagedBackendCredentialKey(field.key, credentialType),
+          })),
         }
       : undefined,
-    configuredCredentialFields: [...(profile.configuredCredentialFields ?? [])],
+    configuredCredentialFields: normalizeManagedBackendConfiguredCredentialFields(
+      profile.configuredCredentialFields,
+      credentialType,
+    ),
     metadata: profile.metadata ? { ...profile.metadata } : undefined,
   };
 }
@@ -31,10 +41,13 @@ export function createRemoteManagedBackendHealth(input: {
   missingFieldsOperation: string;
   name?: string;
 }): ManagedBackendHealthReport {
+  const credentialType = input.profile.credentialSchema?.type ?? "none";
   const requiredFields = (input.profile.credentialSchema?.fields ?? [])
     .filter((field) => field.required)
-    .map((field) => field.key);
-  const configuredFields = new Set(input.profile.configuredCredentialFields ?? []);
+    .map((field) => normalizeManagedBackendCredentialKey(field.key, credentialType));
+  const configuredFields = new Set(
+    normalizeManagedBackendConfiguredCredentialFields(input.profile.configuredCredentialFields, credentialType),
+  );
   const missingFields = requiredFields.filter((field) => !configuredFields.has(field));
   const state: AdapterHealthState = input.profile.endpoint && missingFields.length === 0
     ? "healthy"

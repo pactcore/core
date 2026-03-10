@@ -8,6 +8,10 @@ import type {
   ManagedBackendProfile,
   ManagedBackendSuite,
 } from "../../application/managed-backends";
+import {
+  normalizeManagedBackendConfiguredCredentialFields,
+  normalizeManagedBackendCredentialKey,
+} from "../../application/managed-backends";
 import { RemoteHttpManagedObservabilityAdapterSkeleton } from "./remote-http-managed-observability-adapter-skeleton";
 import { RemoteHttpManagedQueueAdapterSkeleton } from "./remote-http-managed-queue-adapter-skeleton";
 import { RemoteHttpManagedStoreAdapterSkeleton } from "./remote-http-managed-store-adapter-skeleton";
@@ -186,14 +190,23 @@ function createManagedBackendProfile(
   defaults: Pick<ManagedBackendProfileLoaderOptions, "defaultBackendId" | "defaultProviderId" | "defaultDisplayName">,
 ): ManagedBackendProfile {
   const credentialType = input.credentialSchema?.type ?? input.credentialType ?? "none";
+  const normalizedCredentialFields = (input.credentialSchema?.fields ?? DEFAULT_CREDENTIAL_FIELDS[credentialType])
+    .map((field) => ({
+      ...field,
+      key: normalizeManagedBackendCredentialKey(field.key, credentialType),
+    }));
+
   return {
     backendId: normalizeRequiredString(input.backendId ?? defaults.defaultBackendId, "managedBackend.backendId"),
     providerId: normalizeRequiredString(input.providerId ?? defaults.defaultProviderId, "managedBackend.providerId"),
     displayName: normalizeOptionalString(input.displayName ?? defaults.defaultDisplayName),
     endpoint: normalizeOptionalString(input.endpoint),
     timeoutMs: input.timeoutMs,
-    credentialSchema: createManagedBackendCredentialSchema(credentialType, input.credentialSchema?.fields),
-    configuredCredentialFields: [...(input.configuredCredentialFields ?? [])].sort((left, right) => left.localeCompare(right)),
+    credentialSchema: createManagedBackendCredentialSchema(credentialType, normalizedCredentialFields),
+    configuredCredentialFields: normalizeManagedBackendConfiguredCredentialFields(
+      input.configuredCredentialFields,
+      credentialType,
+    ),
     metadata: input.metadata ? { ...input.metadata } : undefined,
   };
 }

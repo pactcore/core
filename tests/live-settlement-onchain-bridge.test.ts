@@ -176,6 +176,7 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
     expect(result.externalReference).toBe("ext-alias");
     expect(transport.requests).toHaveLength(1);
     expect(transport.requests[0]?.headers.authorization).toBe("Bearer alias-secret-token");
+    expect(connector.getHealth().profile?.requiredCredentialFields).toEqual(["token"]);
     expect(connector.getHealth().profile?.configuredCredentialFields).toEqual(["token"]);
   });
 

@@ -15,6 +15,37 @@ export type ManagedBackendCredentialType =
   | "oauth2"
   | "service_account";
 
+const MANAGED_BACKEND_CREDENTIAL_KEY_ALIASES: Record<ManagedBackendCredentialType, Record<string, string>> = {
+  none: {},
+  api_key: {
+    apiKey: "apiKey",
+    api_key: "apiKey",
+    key: "apiKey",
+    token: "apiKey",
+  },
+  bearer: {
+    token: "token",
+    accessToken: "token",
+    access_token: "token",
+  },
+  oauth2: {
+    accessToken: "accessToken",
+    access_token: "accessToken",
+    token: "accessToken",
+  },
+  service_account: {
+    accessToken: "accessToken",
+    access_token: "accessToken",
+    token: "accessToken",
+    clientEmail: "clientEmail",
+    client_email: "clientEmail",
+    email: "clientEmail",
+    projectId: "projectId",
+    project_id: "projectId",
+    scope: "scope",
+  },
+};
+
 export interface ManagedBackendCredentialFieldSchema {
   key: string;
   required?: boolean;
@@ -206,18 +237,36 @@ export async function resolveManagedBackendHealth(
 export function summarizeManagedBackendProfile(
   profile: ManagedBackendProfile,
 ): ManagedBackendProfileSummary {
+  const credentialType = profile.credentialSchema?.type ?? "none";
   return {
     backendId: profile.backendId,
     providerId: profile.providerId,
     displayName: profile.displayName,
     endpoint: profile.endpoint,
     timeoutMs: profile.timeoutMs,
-    credentialType: profile.credentialSchema?.type ?? "none",
-    configuredCredentialFields: [...(profile.configuredCredentialFields ?? [])].sort((left, right) =>
-      left.localeCompare(right),
+    credentialType,
+    configuredCredentialFields: normalizeManagedBackendConfiguredCredentialFields(
+      profile.configuredCredentialFields,
+      credentialType,
     ),
     metadata: profile.metadata ? { ...profile.metadata } : undefined,
   };
+}
+
+export function normalizeManagedBackendCredentialKey(
+  key: string,
+  credentialType: ManagedBackendCredentialType,
+): string {
+  return MANAGED_BACKEND_CREDENTIAL_KEY_ALIASES[credentialType][key] ?? key;
+}
+
+export function normalizeManagedBackendConfiguredCredentialFields(
+  fields: string[] | undefined,
+  credentialType: ManagedBackendCredentialType,
+): string[] {
+  return [...new Set((fields ?? []).map((field) =>
+    normalizeManagedBackendCredentialKey(field, credentialType)
+  ))].sort((left, right) => left.localeCompare(right));
 }
 
 function normalizeManagedBackendHealth(

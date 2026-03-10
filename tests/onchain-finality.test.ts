@@ -123,4 +123,41 @@ describe("Onchain finality runtime", () => {
     expect(reorged.reorgedAt).toBeNumber();
     expect(reorged.confirmations).toBe(0);
   });
+
+  it("ignores stale head regressions so finality state cannot roll backward", () => {
+    let now = 300;
+    const runtime = new OnchainFinalityRuntime({
+      now: () => now,
+      confirmationDepth: 1,
+      finalityDepth: 2,
+    });
+
+    runtime.trackTransaction({
+      txId: "0xtx-stale-head",
+      operation: "governance_proposal_create",
+      submittedAt: now,
+      proposalId: "proposal-stale-head",
+      referenceId: "proposal-stale-head",
+    });
+    runtime.recordTransactionInclusion({
+      txId: "0xtx-stale-head",
+      blockNumber: 30,
+      blockHash: "0xblock-30-a",
+      includedAt: now + 1,
+    });
+
+    const finalizedSummary = runtime.advanceHead(31, "0xblock-31-a");
+    const beforeStale = runtime.getTransaction("0xtx-stale-head");
+
+    now = 320;
+    const staleSummary = runtime.advanceHead(29, "0xblock-29-a");
+    const afterStale = runtime.getTransaction("0xtx-stale-head");
+
+    expect(finalizedSummary.headBlockNumber).toBe(31);
+    expect(beforeStale?.status).toBe("finalized");
+    expect(beforeStale?.confirmations).toBe(2);
+    expect(staleSummary.headBlockNumber).toBe(31);
+    expect(afterStale?.status).toBe("finalized");
+    expect(afterStale?.confirmations).toBe(2);
+  });
 });

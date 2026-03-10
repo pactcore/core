@@ -184,6 +184,13 @@ export class OnchainFinalityRuntime {
 
   advanceHead(blockNumber: number, blockHash?: string): OnchainFinalitySummary {
     const normalizedBlockNumber = normalizeNonNegativeInteger(blockNumber, "blockNumber");
+    if (
+      this.headBlockNumber !== undefined &&
+      normalizedBlockNumber < this.headBlockNumber
+    ) {
+      return this.getSummary();
+    }
+
     this.headBlockNumber = normalizedBlockNumber;
     if (blockHash) {
       this.recordCanonicalBlock({ blockNumber: normalizedBlockNumber, blockHash });

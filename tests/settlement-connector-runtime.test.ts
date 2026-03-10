@@ -33,6 +33,7 @@ describe("Settlement connector runtime hardening", () => {
       displayName: "OpenAI settlement runtime",
       endpoint: "https://settlement.example.test/v1/credits",
       credentialType: "bearer",
+      requiredCredentialFields: ["token"],
       configuredCredentialFields: ["region", "token"],
     });
     expect(JSON.stringify(health)).not.toContain("super-secret-token");

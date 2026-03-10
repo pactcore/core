@@ -90,6 +90,7 @@ export interface SettlementConnectorProfileSummary {
   displayName?: string;
   endpoint?: string;
   credentialType: SettlementConnectorCredentialType;
+  requiredCredentialFields: string[];
   configuredCredentialFields: string[];
 }
 

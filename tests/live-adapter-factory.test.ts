@@ -94,6 +94,7 @@ describe("Live adapter factories", () => {
     expect(transport.requests).toHaveLength(1);
     expect(transport.requests[0]?.headers.authorization).toBe("Bearer openai-alias-secret");
     const health = container.pactEconomics.getConnectorHealth().find((entry) => entry.connector === "llm_token_metering");
+    expect(health?.profile?.requiredCredentialFields).toEqual(["token"]);
     expect(health?.profile?.configuredCredentialFields).toEqual(["token"]);
   });
 
@@ -185,6 +186,7 @@ describe("Live adapter factories", () => {
       profileId: "openai-prod",
       providerId: "openai",
       credentialType: "bearer",
+      requiredCredentialFields: ["token"],
       configuredCredentialFields: ["token"],
     });
     expect(container.pactOnchain.getFinalitySummary()).toMatchObject({
