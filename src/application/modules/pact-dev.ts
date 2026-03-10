@@ -388,6 +388,20 @@ export class PactDev {
         language: template.language,
       },
     });
+
+    await this.managedBackends.observability?.recordTrace({
+      traceId: `dev-template:${template.id}`,
+      spanId: "register",
+      name: "dev.template.register",
+      startedAt: recordedAt,
+      endedAt: Date.now(),
+      status: "ok",
+      attributes: {
+        templateId: template.id,
+        language: template.language,
+        tagsCount: template.tags.length,
+      },
+    });
   }
 
   private async syncManagedPolicyPackage(pkg: PolicyPackage, recordedAt: number): Promise<void> {
@@ -421,6 +435,21 @@ export class PactDev {
       recordedAt,
       labels: {
         version: pkg.version,
+      },
+    });
+
+    await this.managedBackends.observability?.recordTrace({
+      traceId: `dev-policy:${pkg.id}`,
+      spanId: "register",
+      name: "dev.policy.register",
+      startedAt: recordedAt,
+      endedAt: Date.now(),
+      status: "ok",
+      attributes: {
+        policyId: pkg.id,
+        ownerId: pkg.ownerId,
+        version: pkg.version,
+        ruleCount: pkg.rules.length,
       },
     });
   }

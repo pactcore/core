@@ -264,6 +264,276 @@ describe("managed backend contracts", () => {
     expect(devObservabilityHealth?.features?.flushCount).toBe(1);
   });
 
+  it("routes PactData publications through managed queue, store, and observability adapters", async () => {
+    const queue = new RemoteHttpManagedQueueAdapterSkeleton({
+      domain: "data",
+      profile: {
+        backendId: "managed-data-queue",
+        providerId: "managed-data",
+        endpoint: "https://managed.example.com/data/queue",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["token"],
+      },
+    });
+    const store = new RemoteHttpManagedStoreAdapterSkeleton<unknown>({
+      domain: "data",
+      profile: {
+        backendId: "managed-data-store",
+        providerId: "managed-data",
+        endpoint: "https://managed.example.com/data/store",
+        credentialSchema: {
+          type: "api_key",
+          fields: [{ key: "apiKey", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["apiKey"],
+      },
+    });
+    const observability = new RemoteHttpManagedObservabilityAdapterSkeleton({
+      domain: "data",
+      profile: {
+        backendId: "managed-data-observability",
+        providerId: "managed-data",
+        endpoint: "https://managed.example.com/data/observability",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["token"],
+      },
+    });
+    const container = createContainer(undefined, {
+      managedBackends: {
+        data: {
+          queue,
+          store,
+          observability,
+        },
+      },
+    });
+
+    const asset = await container.pactData.publish({
+      ownerId: "owner-1",
+      title: "Managed asset",
+      uri: "cid://managed-asset",
+      tags: ["managed"],
+      derivedFrom: ["asset-parent-1"],
+    });
+    const stored = await store.get(`asset:${asset.id}`);
+    const backendHealth = await container.pactData.getManagedBackendHealth();
+    const queueHealth = backendHealth.backends.find((entry) => entry.capability === "queue");
+    const storeHealth = backendHealth.backends.find((entry) => entry.capability === "store");
+    const observabilityHealth = backendHealth.backends.find((entry) => entry.capability === "observability");
+
+    expect(queue.getDepth().available).toBe(1);
+    expect(stored?.value).toMatchObject({
+      asset: {
+        id: asset.id,
+        ownerId: "owner-1",
+      },
+      derivedFrom: ["asset-parent-1"],
+    });
+    expect(queueHealth?.features?.queuedMessages).toBe(1);
+    expect(storeHealth?.features?.storedRecords).toBe(1);
+    expect(observabilityHealth?.features?.bufferedMetrics).toBe(1);
+    expect(observabilityHealth?.features?.bufferedTraces).toBe(1);
+  });
+
+  it("routes PactCompute job lifecycle through managed queue, store, and observability adapters", async () => {
+    const queue = new RemoteHttpManagedQueueAdapterSkeleton({
+      domain: "compute",
+      profile: {
+        backendId: "managed-compute-queue",
+        providerId: "managed-compute",
+        endpoint: "https://managed.example.com/compute/queue",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["token"],
+      },
+    });
+    const store = new RemoteHttpManagedStoreAdapterSkeleton<unknown>({
+      domain: "compute",
+      profile: {
+        backendId: "managed-compute-store",
+        providerId: "managed-compute",
+        endpoint: "https://managed.example.com/compute/store",
+        credentialSchema: {
+          type: "api_key",
+          fields: [{ key: "apiKey", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["apiKey"],
+      },
+    });
+    const observability = new RemoteHttpManagedObservabilityAdapterSkeleton({
+      domain: "compute",
+      profile: {
+        backendId: "managed-compute-observability",
+        providerId: "managed-compute",
+        endpoint: "https://managed.example.com/compute/observability",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["token"],
+      },
+    });
+    const container = createContainer(undefined, {
+      managedBackends: {
+        compute: {
+          queue,
+          store,
+          observability,
+        },
+      },
+    });
+    await container.pactCompute.registerProvider({
+      id: "provider-1",
+      name: "Managed GPU",
+      capabilities: {
+        cpuCores: 8,
+        memoryMB: 16_384,
+        gpuCount: 1,
+        gpuModel: "A10",
+      },
+      pricePerCpuSecondCents: 1,
+      pricePerGpuSecondCents: 2,
+      pricePerMemoryMBHourCents: 1,
+      status: "available",
+      registeredAt: Date.now(),
+    });
+
+    const job = await container.pactCompute.enqueueComputeJob({
+      image: "busybox",
+      command: "echo managed",
+    });
+    const result = await container.pactCompute.dispatchJob(job.id, "provider-1");
+    const jobRecord = await store.get(`job:${job.id}`);
+    const checkpointPage = await store.list({ prefix: `checkpoint:${job.id}:` });
+    const backendHealth = await container.pactCompute.getManagedBackendHealth();
+    const queueHealth = backendHealth.backends.find((entry) => entry.capability === "queue");
+    const storeHealth = backendHealth.backends.find((entry) => entry.capability === "store");
+    const observabilityHealth = backendHealth.backends.find((entry) => entry.capability === "observability");
+
+    expect(result.status).toBe("completed");
+    expect(queue.getDepth().available).toBe(1);
+    expect(jobRecord?.value).toMatchObject({
+      result: {
+        jobId: job.id,
+        status: "completed",
+      },
+    });
+    expect(checkpointPage?.items.length).toBeGreaterThanOrEqual(2);
+    expect(queueHealth?.features?.queuedMessages).toBe(1);
+    expect(storeHealth?.features?.storedRecords).toBeGreaterThanOrEqual(3);
+    expect(observabilityHealth?.features?.bufferedMetrics).toBe(2);
+    expect(observabilityHealth?.features?.bufferedTraces).toBe(2);
+  });
+
+  it("routes PactDev lifecycle events through managed queue, store, and observability adapters", async () => {
+    const queue = new RemoteHttpManagedQueueAdapterSkeleton({
+      domain: "dev",
+      profile: {
+        backendId: "managed-dev-queue",
+        providerId: "managed-dev",
+        endpoint: "https://managed.example.com/dev/queue",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["token"],
+      },
+    });
+    const store = new RemoteHttpManagedStoreAdapterSkeleton<unknown>({
+      domain: "dev",
+      profile: {
+        backendId: "managed-dev-store",
+        providerId: "managed-dev",
+        endpoint: "https://managed.example.com/dev/store",
+        credentialSchema: {
+          type: "api_key",
+          fields: [{ key: "apiKey", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["apiKey"],
+      },
+    });
+    const observability = new RemoteHttpManagedObservabilityAdapterSkeleton({
+      domain: "dev",
+      profile: {
+        backendId: "managed-dev-observability",
+        providerId: "managed-dev",
+        endpoint: "https://managed.example.com/dev/observability",
+        credentialSchema: {
+          type: "oauth2",
+          fields: [{ key: "accessToken", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["accessToken"],
+      },
+    });
+    const container = createContainer(undefined, {
+      managedBackends: {
+        dev: {
+          queue,
+          store,
+          observability,
+        },
+      },
+    });
+
+    const integration = await container.pactDev.register({
+      ownerId: "owner-1",
+      name: "Managed SDK",
+      webhookUrl: "https://managed.example.com/hooks/sdk",
+      version: "1.0.0",
+      supportedCoreVersions: ["^0.2.0"],
+    });
+    await container.pactDev.activate(integration.id);
+    const template = await container.pactDev.registerTemplate({
+      name: "Bun SDK",
+      language: "typescript",
+      repoUrl: "https://example.com/sdk",
+      description: "Managed SDK template",
+    });
+    await container.pactDev.registerPolicy({
+      id: "policy-1",
+      name: "Managed Policy",
+      version: "1.0.0",
+      rules: [],
+      ownerId: "owner-1",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const integrationRecord = await store.get(`integration:${integration.id}`);
+    const templateRecord = await store.get(`template:${template.id}`);
+    const policyRecord = await store.get("policy:policy-1");
+    const backendHealth = await container.pactDev.getManagedBackendHealth();
+    const queueHealth = backendHealth.backends.find((entry) => entry.capability === "queue");
+    const storeHealth = backendHealth.backends.find((entry) => entry.capability === "store");
+    const observabilityHealth = backendHealth.backends.find((entry) => entry.capability === "observability");
+
+    expect(queue.getDepth().available).toBe(4);
+    expect(integrationRecord?.value).toMatchObject({
+      id: integration.id,
+      status: "active",
+    });
+    expect(templateRecord?.value).toMatchObject({
+      id: template.id,
+      language: "typescript",
+    });
+    expect(policyRecord?.value).toMatchObject({
+      id: "policy-1",
+      version: "1.0.0",
+    });
+    expect(queueHealth?.features?.queuedMessages).toBe(4);
+    expect(storeHealth?.features?.storedRecords).toBe(3);
+    expect(observabilityHealth?.features?.bufferedMetrics).toBe(4);
+    expect(observabilityHealth?.features?.bufferedTraces).toBe(4);
+  });
+
   it("reports degraded remote managed backend health when credentials are incomplete", async () => {
     const dataStore = new RemoteHttpManagedStoreAdapterSkeleton<string>({
       domain: "data",
@@ -421,4 +691,137 @@ describe("managed backend contracts", () => {
       },
     });
   });
+
+  it("mirrors PactData, PactCompute, and PactDev operations into managed backend contracts", async () => {
+    const container = createContainer(undefined, {
+      managedBackends: {
+        data: {
+          queue: new RemoteHttpManagedQueueAdapterSkeleton({ domain: "data", profile: buildBearerProfile("data", "queue") }),
+          store: new RemoteHttpManagedStoreAdapterSkeleton({ domain: "data", profile: buildBearerProfile("data", "store") }),
+          observability: new RemoteHttpManagedObservabilityAdapterSkeleton({
+            domain: "data",
+            profile: buildBearerProfile("data", "observability"),
+          }),
+        },
+        compute: {
+          queue: new RemoteHttpManagedQueueAdapterSkeleton({ domain: "compute", profile: buildBearerProfile("compute", "queue") }),
+          store: new RemoteHttpManagedStoreAdapterSkeleton({ domain: "compute", profile: buildBearerProfile("compute", "store") }),
+          observability: new RemoteHttpManagedObservabilityAdapterSkeleton({
+            domain: "compute",
+            profile: buildBearerProfile("compute", "observability"),
+          }),
+        },
+        dev: {
+          queue: new RemoteHttpManagedQueueAdapterSkeleton({ domain: "dev", profile: buildBearerProfile("dev", "queue") }),
+          store: new RemoteHttpManagedStoreAdapterSkeleton({ domain: "dev", profile: buildBearerProfile("dev", "store") }),
+          observability: new RemoteHttpManagedObservabilityAdapterSkeleton({
+            domain: "dev",
+            profile: buildBearerProfile("dev", "observability"),
+          }),
+        },
+      },
+    });
+
+    const asset = await container.pactData.publish({
+      ownerId: "owner-1",
+      title: "Training corpus",
+      uri: "s3://datasets/training-corpus",
+      derivedFrom: ["raw-1"],
+    });
+    await container.pactData.registerIntegrityProof(asset.id, "sha256:asset-proof");
+
+    const provider = {
+      id: "provider-managed",
+      name: "managed-provider",
+      capabilities: { cpuCores: 4, memoryMB: 8192, gpuCount: 0 },
+      pricePerCpuSecondCents: 1,
+      pricePerGpuSecondCents: 4,
+      pricePerMemoryMBHourCents: 1,
+      status: "available" as const,
+      registeredAt: Date.now(),
+    };
+    await container.pactCompute.registerProvider(provider);
+    const job = await container.pactCompute.enqueueComputeJob({
+      image: "alpine:latest",
+      command: "echo managed",
+    });
+    await container.pactCompute.dispatchJob(job.id, provider.id);
+
+    const integration = await container.pactDev.register({
+      ownerId: "developer-1",
+      name: "managed-hook",
+      webhookUrl: "https://example.com/hooks/managed",
+      supportedCoreVersions: ["^0.2.0"],
+    });
+    await container.pactDev.activate(integration.id);
+    await container.pactDev.registerPolicy({
+      id: "pkg-managed",
+      name: "managed-policy",
+      version: "1.0.0",
+      rules: [],
+      ownerId: "developer-1",
+      createdAt: 1_710_000_000_000,
+      updatedAt: 1_710_000_000_000,
+    });
+    await container.pactDev.registerTemplate({
+      name: "managed-template",
+      language: "TypeScript",
+      repoUrl: "https://example.com/templates/managed",
+      description: "Managed template",
+    });
+
+    const app = createApp(undefined, { container });
+    const dataResponse = await app.request("/data/backends/health");
+    const computeResponse = await app.request("/compute/backends/health");
+    const devResponse = await app.request("/dev/backends/health");
+    const dataBody = (await dataResponse.json()) as {
+      backends: Array<{ capability: string; features?: Record<string, boolean | number | string> }>;
+    };
+    const computeBody = (await computeResponse.json()) as {
+      backends: Array<{ capability: string; features?: Record<string, boolean | number | string> }>;
+    };
+    const devBody = (await devResponse.json()) as {
+      backends: Array<{ capability: string; features?: Record<string, boolean | number | string> }>;
+    };
+
+    const dataQueue = dataBody.backends.find((entry) => entry.capability === "queue");
+    const dataStore = dataBody.backends.find((entry) => entry.capability === "store");
+    const dataObservability = dataBody.backends.find((entry) => entry.capability === "observability");
+    const computeQueue = computeBody.backends.find((entry) => entry.capability === "queue");
+    const computeStore = computeBody.backends.find((entry) => entry.capability === "store");
+    const computeObservability = computeBody.backends.find((entry) => entry.capability === "observability");
+    const devQueue = devBody.backends.find((entry) => entry.capability === "queue");
+    const devStore = devBody.backends.find((entry) => entry.capability === "store");
+    const devObservability = devBody.backends.find((entry) => entry.capability === "observability");
+
+    expect(dataQueue?.features?.queuedMessages).toBe(1);
+    expect(Number(dataStore?.features?.storedRecords)).toBeGreaterThanOrEqual(2);
+    expect(Number(dataObservability?.features?.bufferedMetrics)).toBeGreaterThanOrEqual(2);
+    expect(Number(dataObservability?.features?.bufferedTraces)).toBeGreaterThanOrEqual(2);
+
+    expect(computeQueue?.features?.queuedMessages).toBe(1);
+    expect(Number(computeStore?.features?.storedRecords)).toBeGreaterThanOrEqual(3);
+    expect(Number(computeObservability?.features?.bufferedMetrics)).toBeGreaterThanOrEqual(2);
+    expect(Number(computeObservability?.features?.bufferedTraces)).toBeGreaterThanOrEqual(1);
+
+    expect(Number(devQueue?.features?.queuedMessages)).toBeGreaterThanOrEqual(4);
+    expect(Number(devStore?.features?.storedRecords)).toBeGreaterThanOrEqual(3);
+    expect(Number(devObservability?.features?.bufferedMetrics)).toBeGreaterThanOrEqual(4);
+    expect(Number(devObservability?.features?.bufferedTraces)).toBeGreaterThanOrEqual(2);
+  });
 });
+
+function buildBearerProfile(domain: string, capability: string) {
+  return {
+    backendId: `managed-${domain}-${capability}`,
+    providerId: `managed-${domain}`,
+    displayName: `Managed ${domain} ${capability}`,
+    endpoint: `https://managed.example.com/${domain}/${capability}`,
+    timeoutMs: 2_000,
+    credentialSchema: {
+      type: "bearer" as const,
+      fields: [{ key: "token", required: true, secret: true }],
+    },
+    configuredCredentialFields: ["token"],
+  };
+}

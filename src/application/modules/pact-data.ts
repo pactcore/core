@@ -127,6 +127,7 @@ export class PactData {
         provenAt: Date.now(),
       };
       await this.integrityProofRepository.save(proof);
+      await this.syncManagedIntegrityProof(proof);
       return proof;
     });
   }
@@ -479,6 +480,42 @@ export class PactData {
         assetId: asset.id,
         ownerId: asset.ownerId,
         derivedFromCount: derivedFrom.length,
+      },
+    });
+  }
+
+  private async syncManagedIntegrityProof(proof: IntegrityProof): Promise<void> {
+    await this.managedBackends.store?.put({
+      key: `integrity:${proof.assetId}`,
+      value: proof,
+      updatedAt: proof.provenAt,
+      metadata: {
+        assetId: proof.assetId,
+        algorithm: proof.algorithm,
+        recordType: "integrity_proof",
+      },
+    });
+
+    await this.managedBackends.observability?.recordMetric({
+      name: "data.integrity.proofs.registered",
+      type: "counter",
+      value: 1,
+      recordedAt: proof.provenAt,
+      labels: {
+        algorithm: proof.algorithm,
+      },
+    });
+
+    await this.managedBackends.observability?.recordTrace({
+      traceId: `data-integrity:${proof.assetId}`,
+      spanId: "register",
+      name: "data.integrity.register",
+      startedAt: proof.provenAt,
+      endedAt: Date.now(),
+      status: "ok",
+      attributes: {
+        assetId: proof.assetId,
+        algorithm: proof.algorithm,
       },
     });
   }

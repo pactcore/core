@@ -581,6 +581,20 @@ export class PactCompute {
         topic: job.topic,
       },
     });
+
+    await this.managedBackends.observability?.recordTrace({
+      traceId: `compute-job:${job.id}`,
+      spanId: "enqueue",
+      name: "compute.job.enqueue",
+      startedAt: createdAt,
+      endedAt: Date.now(),
+      status: "ok",
+      attributes: {
+        jobId: job.id,
+        topic: job.topic,
+        runAt: job.runAt,
+      },
+    });
   }
 
   private async syncManagedDispatchOutcome(
