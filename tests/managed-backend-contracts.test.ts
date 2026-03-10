@@ -610,6 +610,82 @@ describe("managed backend contracts", () => {
     );
   });
 
+  it("reports degraded remote managed backend health when endpoint configuration is missing", async () => {
+    const dataQueue = new RemoteHttpManagedQueueAdapterSkeleton({
+      domain: "data",
+      profile: {
+        backendId: "managed-data-queue",
+        providerId: "managed-data",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["token"],
+      },
+    });
+    const computeStore = new RemoteHttpManagedStoreAdapterSkeleton<string>({
+      domain: "compute",
+      profile: {
+        backendId: "managed-compute-store",
+        providerId: "managed-compute",
+        credentialSchema: {
+          type: "api_key",
+          fields: [{ key: "apiKey", required: true, secret: true }],
+        },
+        configuredCredentialFields: ["apiKey"],
+      },
+    });
+    const container = createContainer(undefined, {
+      managedBackends: {
+        data: {
+          queue: dataQueue,
+        },
+        compute: {
+          store: computeStore,
+        },
+      },
+    });
+    const app = createApp(undefined, { container });
+
+    const dataResponse = await app.request("/data/backends/health");
+    const dataBody = (await dataResponse.json()) as {
+      status: string;
+      backends: Array<{
+        capability: string;
+        state: string;
+        lastError?: { code?: string; operation?: string };
+      }>;
+    };
+    const computeResponse = await app.request("/compute/backends/health");
+    const computeBody = (await computeResponse.json()) as {
+      status: string;
+      backends: Array<{
+        capability: string;
+        state: string;
+        lastError?: { code?: string; operation?: string };
+      }>;
+    };
+
+    expect(dataResponse.status).toBe(200);
+    expect(computeResponse.status).toBe(200);
+    expect(dataBody.status).toBe("degraded");
+    expect(computeBody.status).toBe("degraded");
+    expect(dataBody.backends.find((entry) => entry.capability === "queue")).toMatchObject({
+      state: "degraded",
+      lastError: {
+        code: "managed_backend_endpoint_missing",
+        operation: "configure_remote_queue",
+      },
+    });
+    expect(computeBody.backends.find((entry) => entry.capability === "store")).toMatchObject({
+      state: "degraded",
+      lastError: {
+        code: "managed_backend_endpoint_missing",
+        operation: "configure_remote_store",
+      },
+    });
+  });
+
   it("loads env-configured remote managed backends for data, compute, and dev", async () => {
     const container = createContainer(undefined, {
       env: {

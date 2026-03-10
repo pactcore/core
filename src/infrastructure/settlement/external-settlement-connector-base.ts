@@ -42,6 +42,25 @@ export abstract class ExternalSettlementConnectorBase extends InMemorySettlement
         throw new Error("providerProfile.endpoint is required for external settlement connectors");
       }
 
+      const body = JSON.stringify({
+        settlementId: input.settlementId,
+        recordId: input.recordId,
+        legId: input.legId,
+        assetId: input.assetId,
+        payerId: input.payerId,
+        payeeId: input.payeeId,
+        amount: input.amount,
+        unit: input.unit,
+        idempotencyKey: input.idempotencyKey,
+        connector: this.connector,
+        operation: this.operation,
+        providerId: profile.providerId,
+        profileId: profile.id,
+        profileMetadata: profile.metadata,
+        connectorPayload,
+      });
+      const bodyDigest = await createRequestDigest(body);
+
       const request: SettlementConnectorTransportRequest = {
         connector: this.connector,
         operation: this.operation,
@@ -51,25 +70,15 @@ export abstract class ExternalSettlementConnectorBase extends InMemorySettlement
           "content-type": "application/json",
           "x-pact-provider-id": profile.providerId,
           "x-pact-provider-profile": profile.id,
+          "x-pact-request-digest": bodyDigest,
+          ...(input.idempotencyKey
+            ? {
+                "idempotency-key": input.idempotencyKey,
+              }
+            : {}),
           ...this.buildAuthHeaders(profile),
         },
-        body: JSON.stringify({
-          settlementId: input.settlementId,
-          recordId: input.recordId,
-          legId: input.legId,
-          assetId: input.assetId,
-          payerId: input.payerId,
-          payeeId: input.payeeId,
-          amount: input.amount,
-          unit: input.unit,
-          idempotencyKey: input.idempotencyKey,
-          connector: this.connector,
-          operation: this.operation,
-          providerId: profile.providerId,
-          profileId: profile.id,
-          profileMetadata: profile.metadata,
-          connectorPayload,
-        }),
+        body,
         timeoutMs: this.getTimeoutMs(),
       };
       const response = await this.transport.send(request);
@@ -234,4 +243,13 @@ function normalizeOptionalFiniteNumber(value: unknown): number | undefined {
     return undefined;
   }
   return Math.floor(value);
+}
+
+async function createRequestDigest(body: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+  return `sha256:${bufferToHex(digest)}`;
+}
+
+function bufferToHex(buffer: ArrayBuffer): string {
+  return [...new Uint8Array(buffer)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }

@@ -39,6 +39,29 @@ export function createRemoteManagedBackendHealth(input: {
   const state: AdapterHealthState = input.profile.endpoint && missingFields.length === 0
     ? "healthy"
     : "degraded";
+  const now = Date.now();
+  const lastError = !input.profile.endpoint
+    ? {
+        adapter: input.domain,
+        operation: `configure_remote_${input.capability}`,
+        code: "managed_backend_endpoint_missing",
+        message: "Managed backend endpoint is required",
+        retryable: false,
+        occurredAt: now,
+      }
+    : missingFields.length > 0
+      ? {
+          adapter: input.domain,
+          operation: input.missingFieldsOperation,
+          code: "managed_backend_credentials_incomplete",
+          message: `Missing credential fields: ${missingFields.join(", ")}`,
+          retryable: false,
+          occurredAt: now,
+          details: {
+            missingFields: missingFields.join(","),
+          },
+        }
+      : undefined;
 
   return {
     name: input.name ?? `${input.domain}-remote-${input.capability}-backend`,
@@ -46,7 +69,7 @@ export function createRemoteManagedBackendHealth(input: {
     capability: input.capability,
     mode: "remote",
     state,
-    checkedAt: Date.now(),
+    checkedAt: now,
     durable: true,
     durability: REMOTE_MANAGED_BACKEND_DURABILITY,
     features: {
@@ -54,18 +77,6 @@ export function createRemoteManagedBackendHealth(input: {
       skeleton: true,
     },
     profile: summarizeManagedBackendProfile(input.profile),
-    lastError: missingFields.length > 0
-      ? {
-          adapter: input.domain,
-          operation: input.missingFieldsOperation,
-          code: "managed_backend_credentials_incomplete",
-          message: `Missing credential fields: ${missingFields.join(", ")}`,
-          retryable: false,
-          occurredAt: Date.now(),
-          details: {
-            missingFields: missingFields.join(","),
-          },
-        }
-      : undefined,
+    lastError,
   };
 }

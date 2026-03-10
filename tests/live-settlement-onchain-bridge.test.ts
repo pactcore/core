@@ -84,7 +84,9 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
     });
     expect(transport.requests).toHaveLength(1);
     expect(transport.requests[0]?.headers.authorization).toBe("Bearer live-secret-token");
+    expect(transport.requests[0]?.headers["idempotency-key"]).toBeUndefined();
     expect(transport.requests[0]?.headers["x-pact-provider-profile"]).toBe("openai-live");
+    expect(transport.requests[0]?.headers["x-pact-request-digest"]?.startsWith("sha256:")).toBe(true);
     const payload = JSON.parse(transport.requests[0]?.body ?? "{}");
     expect(payload.connector).toBe("llm_token_metering");
     expect(payload.connectorPayload).toMatchObject({
@@ -180,10 +182,14 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
     expect(result.records).toHaveLength(3);
     expect(transport.requests).toHaveLength(3);
     expect(transport.requests[0]?.headers.authorization).toBe("Bearer openai-token");
+    expect(transport.requests[0]?.headers["idempotency-key"]).toBe("live-1:leg-1");
+    expect(transport.requests[0]?.headers["x-pact-request-digest"]?.startsWith("sha256:")).toBe(true);
     expect(transport.requests[1]?.headers.authorization).toBe(
       `Basic ${Buffer.from("aws-user:aws-pass").toString("base64")}`,
     );
+    expect(transport.requests[1]?.headers["idempotency-key"]).toBe("live-1:leg-2");
     expect(transport.requests[2]?.headers["x-api-key"]).toBe("search-key");
+    expect(transport.requests[2]?.headers["idempotency-key"]).toBe("live-1:leg-3");
     expect(result.records.every((record) => record.connectorMetadata?.acceptedOperation)).toBeTrue();
     expect(result.records.every((record) => record.connectorMetadata?.delivered === "true")).toBeTrue();
   });

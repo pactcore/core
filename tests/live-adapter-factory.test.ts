@@ -121,6 +121,8 @@ describe("Live adapter factories", () => {
     expect(second.records).toHaveLength(1);
     expect(transport.requests).toHaveLength(2);
     expect(transport.requests[0]?.headers.authorization).toBe("Bearer openai-secret");
+    expect(transport.requests[0]?.headers["idempotency-key"]).toBe("settlement-live-retry:leg-1");
+    expect(transport.requests[0]?.headers["x-pact-request-digest"]?.startsWith("sha256:")).toBe(true);
     expect(first.records[0]?.externalReference).toBe("llm-ref-1");
     expect(second.records[0]?.externalReference).toBe("llm-ref-1");
 
