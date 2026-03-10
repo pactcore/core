@@ -1,5 +1,6 @@
 import type {
   SettlementConnectorCircuitBreakerPolicy,
+  SettlementConnectorCredentialType,
   SettlementConnectorProfileSummary,
   SettlementConnectorFailure,
   SettlementConnectorHealth,
@@ -24,6 +25,40 @@ const DEFAULT_RETRY_POLICY: SettlementConnectorRetryPolicy = {
 
 const DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MS = 30_000;
 const DEFAULT_TIMEOUT_MS = 5_000;
+const CREDENTIAL_KEY_ALIASES: Record<SettlementConnectorCredentialType, Record<string, string>> = {
+  none: {},
+  api_key: {
+    apiKey: "apiKey",
+    api_key: "apiKey",
+    key: "apiKey",
+    token: "apiKey",
+  },
+  bearer: {
+    token: "token",
+    accessToken: "token",
+    access_token: "token",
+  },
+  basic: {
+    username: "username",
+    password: "password",
+  },
+  oauth2: {
+    accessToken: "accessToken",
+    access_token: "accessToken",
+    token: "accessToken",
+  },
+  service_account: {
+    accessToken: "accessToken",
+    access_token: "accessToken",
+    token: "accessToken",
+    clientEmail: "clientEmail",
+    client_email: "clientEmail",
+    email: "clientEmail",
+    projectId: "projectId",
+    project_id: "projectId",
+    scope: "scope",
+  },
+};
 
 export abstract class InMemorySettlementConnectorBase {
   private readonly processedResults = new Map<string, SettlementConnectorResult>();
@@ -405,9 +440,12 @@ export abstract class InMemorySettlementConnectorBase {
     }
 
     const normalizedFields = credentialFields.map((field, index) => ({
-      key: this.normalizeRequiredString(
-        field?.key,
-        `providerProfile.credentialSchema.fields[${index}].key`,
+      key: canonicalizeCredentialKey(
+        this.normalizeRequiredString(
+          field?.key,
+          `providerProfile.credentialSchema.fields[${index}].key`,
+        ),
+        credentialType,
       ),
       required: field?.required !== false,
       secret: field?.secret === true,
@@ -418,7 +456,7 @@ export abstract class InMemorySettlementConnectorBase {
       throw new Error("providerProfile.credentialSchema.fields contains duplicate keys");
     }
 
-    const credentials = this.normalizeCredentials(profile.credentials);
+    const credentials = this.normalizeCredentials(profile.credentials, credentialType);
     for (const field of normalizedFields) {
       if (field.required && credentials[field.key] === undefined) {
         throw new Error(`missing provider credential field: ${field.key}`);
@@ -463,17 +501,30 @@ export abstract class InMemorySettlementConnectorBase {
 
   private normalizeCredentials(
     value: Record<string, string> | undefined,
+    credentialType: SettlementConnectorCredentialType,
   ): Record<string, string> {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new Error("providerProfile.credentials must be an object");
     }
 
-    const entries = Object.entries(value).map(([key, credentialValue]) => [
-      this.normalizeRequiredString(key, "providerProfile.credentials.key"),
-      this.normalizeRequiredString(credentialValue, `providerProfile.credentials.${key}`),
-    ]);
+    const entries = Object.entries(value).map(([key, credentialValue]) => {
+      const normalizedKey = this.normalizeRequiredString(key, "providerProfile.credentials.key");
+      return [
+        canonicalizeCredentialKey(normalizedKey, credentialType),
+        this.normalizeRequiredString(credentialValue, `providerProfile.credentials.${key}`),
+      ] as const;
+    });
 
-    return Object.fromEntries(entries);
+    const normalized = new Map<string, string>();
+    for (const [key, credentialValue] of entries) {
+      const existingValue = normalized.get(key);
+      if (existingValue !== undefined && existingValue !== credentialValue) {
+        throw new Error(`duplicate provider credential field: ${key}`);
+      }
+      normalized.set(key, credentialValue);
+    }
+
+    return Object.fromEntries(normalized.entries());
   }
 
   private normalizeMetadata(
@@ -550,4 +601,11 @@ export abstract class InMemorySettlementConnectorBase {
 
     return Math.min(computedDelay, maxBackoffMs);
   }
+}
+
+function canonicalizeCredentialKey(
+  key: string,
+  credentialType: SettlementConnectorCredentialType,
+): string {
+  return CREDENTIAL_KEY_ALIASES[credentialType][key] ?? key;
 }

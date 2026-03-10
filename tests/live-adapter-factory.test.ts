@@ -45,6 +45,58 @@ describe("Live adapter factories", () => {
     expect(profiles.apiQuotaAllocation).toBeUndefined();
   });
 
+  it("accepts aliased bearer credentials from env-backed settlement profiles", async () => {
+    const transport = new SequencedTransport([
+      {
+        status: 200,
+        body: {
+          externalReference: "llm-ref-alias",
+          processedAt: 1_500,
+        },
+      },
+    ]);
+    const container = createContainer(undefined, {
+      env: {
+        PACT_LLM_SETTLEMENT_PROVIDER_ID: "openai",
+        PACT_LLM_SETTLEMENT_PROFILE_ID: "openai-alias",
+        PACT_LLM_SETTLEMENT_ENDPOINT: "https://billing.example.test/llm",
+        PACT_LLM_SETTLEMENT_CREDENTIAL_TYPE: "bearer",
+        PACT_LLM_SETTLEMENT_CREDENTIAL_ACCESS_TOKEN: "openai-alias-secret",
+      },
+      settlementTransport: transport,
+    });
+
+    await container.pactEconomics.registerAsset({
+      id: "llm-gpt5",
+      kind: "llm_token",
+      symbol: "TOK",
+    });
+
+    const result = await container.pactEconomics.executeSettlement({
+      settlementId: "settlement-live-alias",
+      idempotencyKey: "settlement-live-alias",
+      model: {
+        mode: "multi_asset",
+        legs: [
+          {
+            id: "leg-1",
+            payerId: "issuer-1",
+            payeeId: "agent-1",
+            assetId: "llm-gpt5",
+            amount: 10,
+            unit: "token",
+          },
+        ],
+      },
+    });
+
+    expect(result.records).toHaveLength(1);
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]?.headers.authorization).toBe("Bearer openai-alias-secret");
+    const health = container.pactEconomics.getConnectorHealth().find((entry) => entry.connector === "llm_token_metering");
+    expect(health?.profile?.configuredCredentialFields).toEqual(["token"]);
+  });
+
   it("wires env-configured live settlement adapters with retries and idempotency", async () => {
     const transport = new SequencedTransport([
       {

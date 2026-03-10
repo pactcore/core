@@ -96,6 +96,43 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
     });
   });
 
+  it("accepts aliased provider credential keys for live settlement auth", async () => {
+    const transport = new RecordingTransport(() => ({
+      status: 200,
+      body: {
+        externalReference: "ext-alias",
+        processedAt: 1_500,
+      },
+    }));
+    const connector = new ExternalLlmTokenMeteringConnector({
+      transport,
+      providerProfile: {
+        id: "openai-live-alias",
+        providerId: "openai",
+        endpoint: "https://billing.example.test/llm/credits",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        credentials: {
+          access_token: "alias-secret-token",
+        },
+      },
+      timeoutMs: 500,
+    });
+
+    const result = await connector.applyMeteringCredit(buildRequest({
+      settlementId: "settlement-alias-1",
+      recordId: "record-alias-1",
+      legId: "leg-alias-1",
+    }));
+
+    expect(result.externalReference).toBe("ext-alias");
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]?.headers.authorization).toBe("Bearer alias-secret-token");
+    expect(connector.getHealth().profile?.configuredCredentialFields).toEqual(["token"]);
+  });
+
   it("executes settlement records through live-facing llm/cloud/api transports", async () => {
     const transport = new RecordingTransport((request): SettlementConnectorTransportResponse => ({
       status: 200,
