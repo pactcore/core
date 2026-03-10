@@ -339,4 +339,86 @@ describe("managed backend contracts", () => {
       "managed_backend_credentials_incomplete",
     );
   });
+
+  it("loads env-configured remote managed backends for data, compute, and dev", async () => {
+    const container = createContainer(undefined, {
+      env: {
+        PACT_DATA_STORE_BACKEND_ENDPOINT: "https://managed.example.com/data/store",
+        PACT_DATA_STORE_BACKEND_PROVIDER_ID: "managed-data",
+        PACT_DATA_STORE_BACKEND_CREDENTIAL_TYPE: "api_key",
+        PACT_DATA_STORE_BACKEND_CREDENTIAL_API_KEY: "data-key",
+        PACT_COMPUTE_QUEUE_BACKEND_PROFILE_JSON: JSON.stringify({
+          backendId: "managed-compute-queue",
+          providerId: "managed-compute",
+          endpoint: "https://managed.example.com/compute/queue",
+          credentialType: "bearer",
+          configuredCredentialFields: ["token"],
+        }),
+        PACT_DEV_OBSERVABILITY_BACKEND_ENDPOINT: "https://managed.example.com/dev/observability",
+        PACT_DEV_OBSERVABILITY_BACKEND_PROVIDER_ID: "managed-dev",
+        PACT_DEV_OBSERVABILITY_BACKEND_CREDENTIAL_TYPE: "oauth2",
+        PACT_DEV_OBSERVABILITY_BACKEND_CREDENTIAL_ACCESS_TOKEN: "dev-token",
+      },
+    });
+    const app = createApp(undefined, { container });
+
+    const dataResponse = await app.request("/data/backends/health");
+    const dataBody = (await dataResponse.json()) as {
+      backends: Array<{
+        capability: string;
+        mode: string;
+        state: string;
+        profile?: { providerId?: string; credentialType?: string; configuredCredentialFields?: string[] };
+      }>;
+    };
+    const computeResponse = await app.request("/compute/backends/health");
+    const computeBody = (await computeResponse.json()) as {
+      backends: Array<{
+        capability: string;
+        mode: string;
+        state: string;
+        profile?: { providerId?: string; credentialType?: string; configuredCredentialFields?: string[] };
+      }>;
+    };
+    const devResponse = await app.request("/dev/backends/health");
+    const devBody = (await devResponse.json()) as {
+      backends: Array<{
+        capability: string;
+        mode: string;
+        state: string;
+        profile?: { providerId?: string; credentialType?: string; configuredCredentialFields?: string[] };
+      }>;
+    };
+
+    expect(dataResponse.status).toBe(200);
+    expect(computeResponse.status).toBe(200);
+    expect(devResponse.status).toBe(200);
+    expect(dataBody.backends.find((entry) => entry.capability === "store")).toMatchObject({
+      mode: "remote",
+      state: "healthy",
+      profile: {
+        providerId: "managed-data",
+        credentialType: "api_key",
+        configuredCredentialFields: ["apiKey"],
+      },
+    });
+    expect(computeBody.backends.find((entry) => entry.capability === "queue")).toMatchObject({
+      mode: "remote",
+      state: "healthy",
+      profile: {
+        providerId: "managed-compute",
+        credentialType: "bearer",
+        configuredCredentialFields: ["token"],
+      },
+    });
+    expect(devBody.backends.find((entry) => entry.capability === "observability")).toMatchObject({
+      mode: "remote",
+      state: "healthy",
+      profile: {
+        providerId: "managed-dev",
+        credentialType: "oauth2",
+        configuredCredentialFields: ["accessToken"],
+      },
+    });
+  });
 });

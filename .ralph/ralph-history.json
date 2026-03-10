@@ -1,0 +1,52 @@
+{
+  "iterations": [
+    {
+      "iteration": 1,
+      "startedAt": "2026-03-10T17:50:06.900Z",
+      "endedAt": "2026-03-10T18:01:36.748Z",
+      "durationMs": 689505,
+      "agent": "codex",
+      "model": "gpt-5.4",
+      "toolsUsed": {
+        "a": 1,
+        "the": 2
+      },
+      "filesModified": [
+        "src/application/container.ts",
+        "src/index.ts",
+        "src/infrastructure/settlement/external-settlement-connector-base.ts",
+        "tests/live-settlement-onchain-bridge.test.ts",
+        "tests/managed-backend-contracts.test.ts",
+        ".ralph/",
+        "src/infrastructure/managed/default-managed-backends.ts",
+        "src/infrastructure/managed/remote-http-managed-backend-skeleton-helpers.ts",
+        "src/infrastructure/managed/remote-http-managed-observability-adapter-skeleton.ts",
+        "src/infrastructure/managed/remote-http-managed-queue-adapter-skeleton.ts",
+        "src/infrastructure/managed/remote-http-managed-store-adapter-skeleton.ts"
+      ],
+      "exitCode": 1,
+      "completionDetected": false,
+      "errors": [
+        "-      lastError: missingFields.length > 0",
+        "lastError: missingFields.length > 0",
+        "+    lastError: missingFields.length > 0",
+        "SyntaxError: Cannot export a duplicate name 'RemoteHttpManagedStoreAdapterSkeleton'.",
+        "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error decoding response body)",
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da439af2b2bee17-SJC"
+      ]
+    }
+  ],
+  "totalDurationMs": 689505,
+  "struggleIndicators": {
+    "repeatedErrors": {
+      "-      lastError: missingFields.length > 0": 1,
+      "lastError: missingFields.length > 0": 1,
+      "+    lastError: missingFields.length > 0": 1,
+      "SyntaxError: Cannot export a duplicate name 'RemoteHttpManagedStoreAdapterSkeleton'.": 1,
+      "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error de": 1,
+      "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/respons": 1
+    },
+    "noProgressIterations": 0,
+    "shortIterations": 0
+  }
+}

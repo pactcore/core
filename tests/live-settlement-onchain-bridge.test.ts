@@ -47,6 +47,8 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
         processedAt: 1_111,
         metadata: {
           upstream: "settlement-core",
+          accepted: true,
+          retryAttempt: 2,
         },
       },
     }));
@@ -77,6 +79,8 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
       operation: "apply_metering_credit",
       httpStatus: "201",
       upstream: "settlement-core",
+      accepted: "true",
+      retryAttempt: "2",
     });
     expect(transport.requests).toHaveLength(1);
     expect(transport.requests[0]?.headers.authorization).toBe("Bearer live-secret-token");
@@ -98,6 +102,7 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
         processedAt: 2_000,
         metadata: {
           acceptedOperation: request.operation,
+          delivered: true,
         },
       },
     }));
@@ -180,6 +185,7 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
     );
     expect(transport.requests[2]?.headers["x-api-key"]).toBe("search-key");
     expect(result.records.every((record) => record.connectorMetadata?.acceptedOperation)).toBeTrue();
+    expect(result.records.every((record) => record.connectorMetadata?.delivered === "true")).toBeTrue();
   });
 
   it("uses injected signer abstractions for contract bridge transactions", async () => {

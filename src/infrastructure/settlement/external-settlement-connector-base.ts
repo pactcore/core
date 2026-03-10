@@ -164,7 +164,7 @@ export abstract class ExternalSettlementConnectorBase extends InMemorySettlement
       connector: this.connector,
       operation: this.operation,
       httpStatus: String(response.status),
-      ...normalizeStringRecord(body?.metadata),
+      ...normalizeMetadataRecord(body?.metadata),
     };
 
     return {
@@ -191,16 +191,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function normalizeStringRecord(value: unknown): Record<string, string> | undefined {
+function normalizeMetadataRecord(value: unknown): Record<string, string> | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
 
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([, entryValue]) => typeof entryValue === "string")
-      .map(([key, entryValue]) => [key, entryValue]),
-  );
+  const normalized: Record<string, string> = {};
+
+  for (const [key, entryValue] of Object.entries(value)) {
+    const normalizedValue = normalizeMetadataValue(entryValue);
+    if (normalizedValue !== undefined) {
+      normalized[key] = normalizedValue;
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeMetadataValue(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return normalizeOptionalString(value);
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : undefined;
+  }
+  if (typeof value === "boolean") {
+    return String(value);
+  }
+  return undefined;
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {

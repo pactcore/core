@@ -65,6 +65,7 @@ import { InMemoryPluginListingRepository } from "../infrastructure/dev/in-memory
 import { InMemoryPluginInstallRepository } from "../infrastructure/dev/in-memory-plugin-install-repository";
 import { InMemoryPluginRevenueShareRepository } from "../infrastructure/dev/in-memory-plugin-revenue-share-repository";
 import { InMemoryAntiSpamRateLimitStore } from "../infrastructure/anti-spam/in-memory-anti-spam-rate-limit-store";
+import { createManagedBackendInventoryFromEnv } from "../infrastructure/managed/default-managed-backends";
 import { PactOrchestrator } from "./orchestrator";
 import type { ManagedBackendInventory } from "./managed-backends";
 import { PactAntiSpam } from "./modules/pact-anti-spam";
@@ -171,6 +172,7 @@ export interface PactContainerEnvironment {
   [key: `PACT_CLOUD_SETTLEMENT_METADATA_${string}`]: string | undefined;
   [key: `PACT_API_SETTLEMENT_CREDENTIAL_${string}`]: string | undefined;
   [key: `PACT_API_SETTLEMENT_METADATA_${string}`]: string | undefined;
+  [key: `PACT_${string}_BACKEND_${string}`]: string | undefined;
 }
 
 export interface CreateContainerOptions {
@@ -185,6 +187,10 @@ export function createContainer(
   options: CreateContainerOptions = {},
 ): PactContainer {
   const env = options.env ?? process.env;
+  const managedBackends = mergeManagedBackendInventory(
+    createManagedBackendInventoryFromEnv(env as Record<string, string | undefined>),
+    options.managedBackends,
+  );
   const dbFile = env.PACT_DB_FILE;
   const taskStoreFile = env.PACT_TASK_STORE_FILE;
   const participantStoreFile = env.PACT_PARTICIPANT_STORE_FILE;
@@ -344,7 +350,7 @@ export function createContainer(
     executionAdapter,
     pricingEngine,
     checkpointStore,
-    options.managedBackends?.compute,
+    managedBackends.compute,
   );
   const pactZK = new PactZK(zkProver, zkVerifier, zkProofRepository, zkVerificationReceiptRepository);
   const pactData = new PactData(
@@ -354,11 +360,11 @@ export function createContainer(
     dataAccessPolicyRepository,
     dataListingRepository,
     dataPurchaseRepository,
-    options.managedBackends?.data,
+    managedBackends.data,
   );
   const pactDev = new PactDev(policyRegistry, templateRepository, {
     runtimeVersion: "0.2.0",
-  }, options.managedBackends?.dev);
+  }, managedBackends.dev);
   const pactOnchain = new PactOnchain(
     undefined,
     undefined,
@@ -475,4 +481,24 @@ function parseIntegerEnv(value: string | undefined, fallback: number): number {
   }
 
   return parsed;
+}
+
+function mergeManagedBackendInventory(
+  envInventory: ManagedBackendInventory,
+  overrides?: ManagedBackendInventory,
+): ManagedBackendInventory {
+  return {
+    data: {
+      ...(envInventory.data ?? {}),
+      ...(overrides?.data ?? {}),
+    },
+    compute: {
+      ...(envInventory.compute ?? {}),
+      ...(overrides?.compute ?? {}),
+    },
+    dev: {
+      ...(envInventory.dev ?? {}),
+      ...(overrides?.dev ?? {}),
+    },
+  };
 }
