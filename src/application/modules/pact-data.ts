@@ -12,6 +12,12 @@ import {
   type AdapterHealthReport,
   type AdapterHealthSummary,
 } from "../adapter-runtime";
+import {
+  aggregateManagedBackendHealth,
+  resolveManagedBackendHealth,
+  type DataManagedBackendSuite,
+  type ManagedBackendHealthReport,
+} from "../managed-backends";
 import type { DataAccessPolicy, IntegrityProof } from "../../domain/types";
 import type {
   DataCategory,
@@ -56,6 +62,7 @@ export class PactData {
     private readonly accessPolicyRepository: DataAccessPolicyRepository,
     private readonly listingRepository?: DataListingRepository,
     private readonly purchaseRepository?: DataPurchaseRepository,
+    private readonly managedBackends: DataManagedBackendSuite = {},
   ) {}
 
   async publish(input: PublishDataAssetInput): Promise<DataAsset> {
@@ -315,6 +322,66 @@ export class PactData {
     ];
 
     return aggregateAdapterHealth(reports);
+  }
+
+  async getManagedBackendHealth() {
+    const assetRepositoryHealth = this.assetRepository.getHealth
+      ? await this.assetRepository.getHealth()
+      : {
+          name: "asset-metadata-store",
+          state: this.assetRepository.isDurable?.() ? "healthy" : "degraded",
+          checkedAt: Date.now(),
+          durable: this.assetRepository.isDurable?.() ?? false,
+          durability: this.assetRepository.durability ?? "memory",
+          features: {
+            assetMetadata: true,
+          },
+        };
+    const backends: ManagedBackendHealthReport[] = [
+      await resolveManagedBackendHealth(this.managedBackends.queue, {
+        name: "data-queue-backend",
+        domain: "data",
+        capability: "queue",
+        mode: "local",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: {
+          synchronousDispatch: true,
+          inlinePublication: true,
+        },
+      }),
+      await resolveManagedBackendHealth(this.managedBackends.store, {
+        ...assetRepositoryHealth,
+        name: "data-store-backend",
+        domain: "data",
+        capability: "store",
+        mode: "local",
+        features: {
+          ...(assetRepositoryHealth.features ?? {}),
+          listings: Boolean(this.listingRepository),
+          purchases: Boolean(this.purchaseRepository),
+        },
+      }),
+      await resolveManagedBackendHealth(this.managedBackends.observability, {
+        name: "data-observability-backend",
+        domain: "data",
+        capability: "observability",
+        mode: "local",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: {
+          lineageTracking: true,
+          integrityVerification: true,
+          marketplace: Boolean(this.listingRepository && this.purchaseRepository),
+        },
+      }),
+    ];
+
+    return aggregateManagedBackendHealth(backends);
   }
 
   private getListingRepository(): DataListingRepository {

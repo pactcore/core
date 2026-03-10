@@ -956,6 +956,10 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(await container.pactCompute.getAdapterHealth());
   });
 
+  app.get("/compute/backends/health", async (c) => {
+    return c.json(await container.pactCompute.getManagedBackendHealth());
+  });
+
   app.post("/compute/providers", async (c) => {
     const body = await c.req.json();
     const provider = {
@@ -1080,6 +1084,10 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
 
   app.get("/data/adapters/health", async (c) => {
     return c.json(await container.pactData.getAdapterHealth());
+  });
+
+  app.get("/data/backends/health", async (c) => {
+    return c.json(await container.pactData.getManagedBackendHealth());
   });
 
   app.post("/data/assets", async (c) => {
@@ -1657,6 +1665,10 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
 
   app.get("/dev/integrations/health", async (c) => {
     return c.json(await container.pactDev.listIntegrationHealth());
+  });
+
+  app.get("/dev/backends/health", async (c) => {
+    return c.json(await container.pactDev.getManagedBackendHealth());
   });
 
   app.post("/dev/integrations", async (c) => {

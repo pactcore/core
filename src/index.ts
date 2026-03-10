@@ -405,6 +405,36 @@ export type {
   ComputeExecutionCheckpointStore,
   ComputeDispatchOptions,
 } from "./application/contracts";
+export type {
+  ManagedBackendDomain,
+  ManagedBackendCapability,
+  ManagedBackendMode,
+  ManagedBackendCredentialType,
+  ManagedBackendCredentialFieldSchema,
+  ManagedBackendCredentialSchema,
+  ManagedBackendProfile,
+  ManagedBackendProfileSummary,
+  ManagedBackendHealthReport,
+  ManagedBackendHealthSummary,
+  ManagedQueueMessage,
+  ManagedQueueReceipt,
+  ManagedQueueDepth,
+  ManagedStoreRecord,
+  ManagedStorePutOptions,
+  ManagedStoreQuery,
+  ManagedStorePage,
+  ManagedMetricRecord,
+  ManagedTraceRecord,
+  ManagedBackendAdapter,
+  ManagedBackendQueueAdapter,
+  ManagedBackendStoreAdapter,
+  ManagedBackendObservabilityAdapter,
+  ManagedBackendSuite,
+  ManagedBackendInventory,
+  DataManagedBackendSuite,
+  ComputeManagedBackendSuite,
+  DevManagedBackendSuite,
+} from "./application/managed-backends";
 export {
   AdapterOperationError,
   DataAdapterError,
@@ -412,6 +442,11 @@ export {
   DevAdapterError,
   aggregateAdapterHealth,
 } from "./application/adapter-runtime";
+export {
+  aggregateManagedBackendHealth,
+  resolveManagedBackendHealth,
+  summarizeManagedBackendProfile,
+} from "./application/managed-backends";
 export type {
   AdapterDurability,
   AdapterErrorDescriptor,
@@ -450,6 +485,7 @@ export { InMemoryComputeExecutionAdapter } from "./infrastructure/compute/in-mem
 export { InMemoryComputeExecutionCheckpointStore } from "./infrastructure/compute/in-memory-compute-execution-checkpoint-store";
 export { DockerExecutionAdapter } from "./infrastructure/compute/docker-execution-adapter";
 export { PricingEngine } from "./infrastructure/compute/pricing-engine";
+export { RemoteHttpManagedQueueAdapterSkeleton } from "./infrastructure/managed/remote-http-managed-queue-adapter-skeleton";
 export {
   calculateJobCost,
   findBestTier,

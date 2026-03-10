@@ -6,6 +6,12 @@ import {
   type AdapterHealthReport,
   type AdapterHealthSummary,
 } from "../adapter-runtime";
+import {
+  aggregateManagedBackendHealth,
+  resolveManagedBackendHealth,
+  type DevManagedBackendSuite,
+  type ManagedBackendHealthReport,
+} from "../managed-backends";
 import type {
   DevIntegrationStatus,
   PolicyEvaluationResult,
@@ -61,6 +67,7 @@ export class PactDev {
     private readonly policyRegistry: PolicyRegistry,
     private readonly templateRepository: TemplateRepository,
     private readonly options: PactDevOptions = {},
+    private readonly managedBackends: DevManagedBackendSuite = {},
   ) {}
 
   async register(input: RegisterDevIntegrationInput): Promise<DevIntegration> {
@@ -212,6 +219,59 @@ export class PactDev {
       integrations,
       runtimeVersion,
     };
+  }
+
+  async getManagedBackendHealth(
+    runtimeVersion = this.options.runtimeVersion ?? DEFAULT_RUNTIME_VERSION,
+  ) {
+    const backends: ManagedBackendHealthReport[] = [
+      await resolveManagedBackendHealth(this.managedBackends.queue, {
+        name: "dev-queue-backend",
+        domain: "dev",
+        capability: "queue",
+        mode: "local",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: {
+          synchronousLifecycle: true,
+          integrationActivation: true,
+        },
+      }),
+      await resolveManagedBackendHealth(this.managedBackends.store, {
+        name: "dev-store-backend",
+        domain: "dev",
+        capability: "store",
+        mode: "local",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: {
+          integrations: this.integrations.size,
+          policyPackages: (await this.policyRegistry.listPackages()).length,
+          sdkTemplates: (await this.templateRepository.list()).length,
+        },
+      }),
+      await resolveManagedBackendHealth(this.managedBackends.observability, {
+        name: "dev-observability-backend",
+        domain: "dev",
+        capability: "observability",
+        mode: "local",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: {
+          compatibilityChecks: true,
+          runtimeVersion,
+          integrationHealth: true,
+        },
+      }),
+    ];
+
+    return aggregateManagedBackendHealth(backends);
   }
 
   private transitionStatus(

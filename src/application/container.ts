@@ -62,6 +62,7 @@ import { InMemoryPluginInstallRepository } from "../infrastructure/dev/in-memory
 import { InMemoryPluginRevenueShareRepository } from "../infrastructure/dev/in-memory-plugin-revenue-share-repository";
 import { InMemoryAntiSpamRateLimitStore } from "../infrastructure/anti-spam/in-memory-anti-spam-rate-limit-store";
 import { PactOrchestrator } from "./orchestrator";
+import type { ManagedBackendInventory } from "./managed-backends";
 import { PactAntiSpam } from "./modules/pact-anti-spam";
 import { PactCompute } from "./modules/pact-compute";
 import { PactData } from "./modules/pact-data";
@@ -129,6 +130,7 @@ export interface PactContainerEnvironment {
 
 export interface CreateContainerOptions {
   env?: PactContainerEnvironment;
+  managedBackends?: ManagedBackendInventory;
 }
 
 export function createContainer(
@@ -263,6 +265,7 @@ export function createContainer(
     executionAdapter,
     pricingEngine,
     checkpointStore,
+    options.managedBackends?.compute,
   );
   const pactZK = new PactZK(zkProver, zkVerifier, zkProofRepository);
   const pactData = new PactData(
@@ -272,10 +275,11 @@ export function createContainer(
     dataAccessPolicyRepository,
     dataListingRepository,
     dataPurchaseRepository,
+    options.managedBackends?.data,
   );
   const pactDev = new PactDev(policyRegistry, templateRepository, {
     runtimeVersion: "0.2.0",
-  });
+  }, options.managedBackends?.dev);
   const pactOnchain = new PactOnchain();
   const pactPluginMarketplace = new PactPluginMarketplace(
     pluginPackageRepository,

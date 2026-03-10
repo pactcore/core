@@ -16,6 +16,12 @@ import {
   type AdapterHealthReport,
   type AdapterHealthSummary,
 } from "../adapter-runtime";
+import {
+  aggregateManagedBackendHealth,
+  resolveManagedBackendHealth,
+  type ComputeManagedBackendSuite,
+  type ManagedBackendHealthReport,
+} from "../managed-backends";
 import type {
   ComputeJobResult,
   ComputeProvider,
@@ -55,6 +61,7 @@ export class PactCompute {
     private readonly executionAdapter: ComputeExecutionAdapter,
     private readonly pricingEngine?: ComputePricingEngine,
     private readonly checkpointStore?: ComputeExecutionCheckpointStore,
+    private readonly managedBackends: ComputeManagedBackendSuite = {},
   ) {}
 
   async registerProvider(provider: ComputeProvider): Promise<void> {
@@ -311,6 +318,64 @@ export class PactCompute {
     ];
 
     return aggregateAdapterHealth(reports);
+  }
+
+  async getManagedBackendHealth() {
+    const checkpointStoreHealth = this.checkpointStore?.getHealth
+      ? await this.checkpointStore.getHealth()
+      : {
+          name: "compute-checkpoint-store",
+          state: this.checkpointStore ? "healthy" : "degraded",
+          checkedAt: Date.now(),
+          durable: false,
+          durability: "memory",
+          features: {
+            checkpointing: Boolean(this.checkpointStore),
+          },
+        };
+    const backends: ManagedBackendHealthReport[] = [
+      await resolveManagedBackendHealth(this.managedBackends.queue, {
+        name: "compute-queue-backend",
+        domain: "compute",
+        capability: "queue",
+        mode: "local",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: {
+          jobScheduling: true,
+          deferredDispatch: true,
+        },
+      }),
+      await resolveManagedBackendHealth(this.managedBackends.store, {
+        ...checkpointStoreHealth,
+        name: "compute-store-backend",
+        domain: "compute",
+        capability: "store",
+        mode: "local",
+        features: {
+          ...(checkpointStoreHealth.features ?? {}),
+          executionCheckpoints: Boolean(this.checkpointStore),
+        },
+      }),
+      await resolveManagedBackendHealth(this.managedBackends.observability, {
+        name: "compute-observability-backend",
+        domain: "compute",
+        capability: "observability",
+        mode: "local",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: {
+          resourceMetering: true,
+          usageRecords: (await this.resourceMeter.listAll()).length,
+        },
+      }),
+    ];
+
+    return aggregateManagedBackendHealth(backends);
   }
 
   private async resolveProvider(providerId?: string): Promise<ComputeProvider> {
