@@ -24,6 +24,16 @@ export interface SettlementConnectorResult {
   metadata?: Record<string, string>;
 }
 
+export type SettlementConnectorKind =
+  | "llm_token_metering"
+  | "cloud_credit_billing"
+  | "api_quota_allocation";
+
+export type SettlementConnectorOperation =
+  | "apply_metering_credit"
+  | "apply_billing_credit"
+  | "allocate_quota";
+
 export type SettlementConnectorCredentialType =
   | "none"
   | "api_key"
@@ -52,6 +62,26 @@ export interface SettlementConnectorProviderProfile {
   credentialSchema: SettlementConnectorCredentialSchema;
   credentials: Record<string, string>;
   metadata?: Record<string, string>;
+}
+
+export interface SettlementConnectorTransportRequest {
+  connector: SettlementConnectorKind;
+  operation: SettlementConnectorOperation;
+  method: "POST";
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+  timeoutMs: number;
+}
+
+export interface SettlementConnectorTransportResponse {
+  status: number;
+  body?: unknown;
+  headers?: Record<string, string>;
+}
+
+export interface SettlementConnectorTransport {
+  send(request: SettlementConnectorTransportRequest): Promise<SettlementConnectorTransportResponse>;
 }
 
 export interface SettlementConnectorProfileSummary {

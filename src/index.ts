@@ -21,6 +21,17 @@ export {
   EvmIdentitySBTContractClient,
   MockRpcProvider,
 } from "./blockchain/evm-gateway";
+export {
+  DeterministicTransactionSigner,
+  RuntimeOnchainFinalityProvider,
+  hexEncodeUtf8,
+  normalizeLikeAddress,
+  submitSignedTransaction,
+  type OnchainRpcProvider,
+  type SerializedTransactionPayload,
+  type TransactionSigner,
+  type UnsignedSerializedTransaction,
+} from "./blockchain/providers";
 export { MockRpcProvider as InfrastructureMockRpcProvider } from "./infrastructure/blockchain/mock-rpc-provider";
 export {
   MockEvmGovernanceBridge,
@@ -35,6 +46,9 @@ export {
 } from "./domain/governance-bridge";
 export {
   OnchainFinalityRuntime,
+  type OnchainFinalityProvider,
+  type OnchainIndexerHook,
+  type OnchainIndexerHookEvent,
   type OnchainFinalityRuntimeConfig,
   type OnchainFinalitySummary,
   type OnchainTransactionOperation,
@@ -236,11 +250,27 @@ export type {
   ZKProofType,
   ZKProofRequest,
   ZKProof,
+  ZKProofBridgeMetadata,
   ZKLocationClaim,
   ZKCompletionClaim,
   ZKIdentityClaim,
   ZKReputationClaim,
 } from "./domain/zk-proofs";
+export type {
+  ZKArtifactRole,
+  ZKArtifactDescriptor,
+  ZKArtifactManifest,
+  ExternalZKProveRequest,
+  ExternalZKProveResponse,
+  ExternalZKVerifyRequest,
+  ExternalZKVerifyResponse,
+  ZKVerificationReceipt,
+} from "./domain/zk-bridge";
+export {
+  computeZKArtifactIntegrity,
+  computeZKManifestIntegrity,
+  hashZKBridgePayload,
+} from "./domain/zk-bridge";
 export type {
   WireVisibility,
   Wire,
@@ -374,11 +404,16 @@ export type {
   SettlementConnectorFailure,
   SettlementConnectorHealth,
   SettlementConnectorHealthState,
+  SettlementConnectorKind,
+  SettlementConnectorOperation,
   SettlementConnectorProfileSummary,
   SettlementConnectorProviderProfile,
   SettlementConnectorRequest,
   SettlementConnectorResult,
   SettlementConnectorRetryPolicy,
+  SettlementConnectorTransport,
+  SettlementConnectorTransportRequest,
+  SettlementConnectorTransportResponse,
   LlmTokenMeteringConnector,
   CloudCreditBillingConnector,
   ApiQuotaAllocationConnector,
@@ -465,6 +500,9 @@ export { InMemoryGasSponsorshipManager } from "./infrastructure/payment/in-memor
 export { InMemoryLlmTokenMeteringConnector } from "./infrastructure/settlement/in-memory-llm-token-metering-connector";
 export { InMemoryCloudCreditBillingConnector } from "./infrastructure/settlement/in-memory-cloud-credit-billing-connector";
 export { InMemoryApiQuotaAllocationConnector } from "./infrastructure/settlement/in-memory-api-quota-allocation-connector";
+export { ExternalLlmTokenMeteringConnector } from "./infrastructure/settlement/external-llm-token-metering-connector";
+export { ExternalCloudCreditBillingConnector } from "./infrastructure/settlement/external-cloud-credit-billing-connector";
+export { ExternalApiQuotaAllocationConnector } from "./infrastructure/settlement/external-api-quota-allocation-connector";
 export { InMemoryDurableSettlementRecordRepository } from "./infrastructure/repositories/in-memory-durable-settlement-record-repository";
 export { FileBackedDurableSettlementRecordRepository } from "./infrastructure/repositories/file-backed-durable-settlement-record-repository";
 export { FileBackedMissionRepository } from "./infrastructure/repositories/file-backed-mission-repository";
@@ -502,6 +540,10 @@ export { InMemoryParticipantStatsRepository } from "./infrastructure/identity/in
 export { InMemoryZKProver } from "./infrastructure/zk/in-memory-zk-prover";
 export { InMemoryZKVerifier } from "./infrastructure/zk/in-memory-zk-verifier";
 export { InMemoryZKProofRepository } from "./infrastructure/zk/in-memory-zk-proof-repository";
+export { InMemoryZKArtifactManifestRepository } from "./infrastructure/zk/in-memory-zk-artifact-manifest-repository";
+export { InMemoryZKVerificationReceiptRepository } from "./infrastructure/zk/in-memory-zk-verification-receipt-repository";
+export { MockExternalZKProverAdapter } from "./infrastructure/zk/mock-external-zk-prover-adapter";
+export { ProductionZKProverBridge } from "./infrastructure/zk/production-zk-prover-bridge";
 
 // PactData infrastructure
 export { InMemoryProvenanceGraph } from "./infrastructure/data/in-memory-provenance-graph";
@@ -621,3 +663,9 @@ export type { PublishPluginInput, PluginListingView } from "./application/module
 export type { PactSecurityOptions, SybilResistanceAssessment } from "./application/modules/pact-security";
 export type { CreateTaskInput } from "./application/modules/pact-tasks";
 export type { FormalPropertyVerificationResult } from "./application/modules/pact-zk";
+export type {
+  ExternalZKProverAdapter,
+  TraceableZKVerifier,
+  ZKArtifactManifestRepository,
+  ZKVerificationReceiptRepository,
+} from "./application/contracts";

@@ -47,6 +47,7 @@ import { InMemoryParticipantStatsRepository } from "../infrastructure/identity/i
 import { InMemoryZKProver } from "../infrastructure/zk/in-memory-zk-prover";
 import { InMemoryZKVerifier } from "../infrastructure/zk/in-memory-zk-verifier";
 import { InMemoryZKProofRepository } from "../infrastructure/zk/in-memory-zk-proof-repository";
+import { InMemoryZKVerificationReceiptRepository } from "../infrastructure/zk/in-memory-zk-verification-receipt-repository";
 import { InMemoryProvenanceGraph } from "../infrastructure/data/in-memory-provenance-graph";
 import { InMemoryIntegrityProofRepository } from "../infrastructure/data/in-memory-integrity-proof-repository";
 import { InMemoryDataAccessPolicyRepository } from "../infrastructure/data/in-memory-data-access-policy-repository";
@@ -210,6 +211,7 @@ export function createContainer(
   const zkProver = new InMemoryZKProver(zkSecret);
   const zkVerifier = new InMemoryZKVerifier(zkSecret);
   const zkProofRepository = new InMemoryZKProofRepository();
+  const zkVerificationReceiptRepository = new InMemoryZKVerificationReceiptRepository();
   const provenanceGraph = new InMemoryProvenanceGraph();
   const integrityProofRepository = new InMemoryIntegrityProofRepository();
   const dataAccessPolicyRepository = new InMemoryDataAccessPolicyRepository();
@@ -267,7 +269,7 @@ export function createContainer(
     checkpointStore,
     options.managedBackends?.compute,
   );
-  const pactZK = new PactZK(zkProver, zkVerifier, zkProofRepository);
+  const pactZK = new PactZK(zkProver, zkVerifier, zkProofRepository, zkVerificationReceiptRepository);
   const pactData = new PactData(
     dataAssetRepository,
     provenanceGraph,

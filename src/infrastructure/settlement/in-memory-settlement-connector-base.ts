@@ -276,6 +276,26 @@ export abstract class InMemorySettlementConnectorBase {
     }
   }
 
+  protected getTimeoutMs(): number {
+    return this.timeoutMs;
+  }
+
+  protected getProviderProfile(): SettlementConnectorProviderProfile | undefined {
+    if (!this.profile) {
+      return undefined;
+    }
+
+    return {
+      ...this.profile,
+      credentialSchema: {
+        ...this.profile.credentialSchema,
+        fields: this.profile.credentialSchema.fields.map((field) => ({ ...field })),
+      },
+      credentials: { ...this.profile.credentials },
+      metadata: this.profile.metadata ? { ...this.profile.metadata } : undefined,
+    };
+  }
+
   private sleep(ms: number): Promise<void> {
     if (ms <= 0) {
       return Promise.resolve();

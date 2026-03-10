@@ -7,6 +7,7 @@ import {
 } from "../../domain/governance-bridge";
 import {
   OnchainFinalityRuntime,
+  type OnchainFinalityProvider,
   type OnchainFinalitySummary,
   type OnchainTransactionPage,
   type OnchainTransactionQuery,
@@ -24,7 +25,7 @@ export class PactOnchain {
   constructor(
     private readonly governanceBridge: MockEvmGovernanceBridge = new MockEvmGovernanceBridge(),
     private readonly rewardsBridge: MockEvmRewardsBridge = new MockEvmRewardsBridge(),
-    private readonly finalityRuntime: OnchainFinalityRuntime = new OnchainFinalityRuntime(),
+    private readonly finalityRuntime: OnchainFinalityProvider = new OnchainFinalityRuntime(),
   ) {}
 
   async createGovernanceProposal(
@@ -154,7 +155,7 @@ export class PactOnchain {
     return this.finalityRuntime.getSummary();
   }
 
-  getFinalityRuntime(): OnchainFinalityRuntime {
+  getFinalityRuntime(): OnchainFinalityProvider {
     return this.finalityRuntime;
   }
 }

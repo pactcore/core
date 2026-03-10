@@ -79,16 +79,37 @@ export interface OnchainFinalitySummary {
   finalityDepth: number;
 }
 
+export interface OnchainIndexerHookEvent {
+  kind: "tracked" | "included" | "status_changed" | "reorged" | "finalized";
+  transaction: OnchainTransactionRecord;
+  previousTransaction?: OnchainTransactionRecord;
+  summary: OnchainFinalitySummary;
+}
+
+export type OnchainIndexerHook = (event: OnchainIndexerHookEvent) => void | Promise<void>;
+
+export interface OnchainFinalityProvider {
+  trackTransaction(input: TrackOnchainTransactionInput): OnchainTransactionRecord;
+  recordTransactionInclusion(input: RecordOnchainTransactionInclusionInput): OnchainTransactionRecord;
+  recordCanonicalBlock(input: RecordCanonicalBlockInput): void;
+  advanceHead(blockNumber: number, blockHash?: string): OnchainFinalitySummary;
+  getTransaction(txId: string): OnchainTransactionRecord | undefined;
+  listTransactions(query?: OnchainTransactionQuery): OnchainTransactionPage;
+  getSummary(): OnchainFinalitySummary;
+}
+
 export interface OnchainFinalityRuntimeConfig {
   confirmationDepth?: number;
   finalityDepth?: number;
   now?: () => number;
+  hooks?: OnchainIndexerHook[];
 }
 
 export class OnchainFinalityRuntime {
   private readonly confirmationDepth: number;
   private readonly finalityDepth: number;
   private readonly now: () => number;
+  private readonly hooks: OnchainIndexerHook[];
   private readonly transactions = new Map<string, OnchainTransactionRecord>();
   private readonly canonicalBlockHashes = new Map<number, string>();
   private headBlockNumber?: number;
@@ -97,6 +118,7 @@ export class OnchainFinalityRuntime {
     this.confirmationDepth = normalizePositiveInteger(config.confirmationDepth ?? 2, "confirmationDepth");
     this.finalityDepth = normalizePositiveInteger(config.finalityDepth ?? 6, "finalityDepth");
     this.now = config.now ?? (() => Date.now());
+    this.hooks = [...(config.hooks ?? [])];
 
     if (this.finalityDepth < this.confirmationDepth) {
       throw new Error("finalityDepth must be greater than or equal to confirmationDepth");
@@ -127,8 +149,7 @@ export class OnchainFinalityRuntime {
       finalityDepth: this.finalityDepth,
     };
 
-    this.transactions.set(txId, this.resolveTransactionState(next));
-    return this.getRequiredTransaction(txId);
+    return this.cloneTransaction(this.storeTransaction(txId, next, "tracked"));
   }
 
   recordTransactionInclusion(
@@ -139,7 +160,6 @@ export class OnchainFinalityRuntime {
     const blockHash = assertNonEmptyString(input.blockHash, "blockHash");
     const includedAt = input.includedAt ?? this.now();
 
-    this.canonicalBlockHashes.set(blockNumber, blockHash);
     const next: OnchainTransactionRecord = {
       ...existing,
       status: "submitted",
@@ -151,32 +171,13 @@ export class OnchainFinalityRuntime {
       blockHash,
       confirmations: 0,
     };
-    this.transactions.set(existing.txId, this.resolveTransactionState(next));
-    return this.getRequiredTransaction(existing.txId);
+    this.canonicalBlockHashes.set(blockNumber, blockHash);
+    return this.cloneTransaction(this.storeTransaction(existing.txId, next, "included"));
   }
 
   recordCanonicalBlock(input: RecordCanonicalBlockInput): void {
     const blockNumber = normalizeNonNegativeInteger(input.blockNumber, "blockNumber");
     const blockHash = assertNonEmptyString(input.blockHash, "blockHash");
-    const existingHash = this.canonicalBlockHashes.get(blockNumber);
-
-    if (existingHash && existingHash !== blockHash) {
-      for (const transaction of this.transactions.values()) {
-        if (transaction.blockNumber !== blockNumber || transaction.blockHash !== existingHash) {
-          continue;
-        }
-
-        this.transactions.set(transaction.txId, {
-          ...transaction,
-          status: "reorged",
-          confirmations: 0,
-          finalizedAt: undefined,
-          reorgedAt: this.now(),
-          lastUpdatedAt: this.now(),
-        });
-      }
-    }
-
     this.canonicalBlockHashes.set(blockNumber, blockHash);
     this.recalculateStates();
   }
@@ -270,8 +271,67 @@ export class OnchainFinalityRuntime {
 
   private recalculateStates(): void {
     for (const [txId, transaction] of this.transactions.entries()) {
-      this.transactions.set(txId, this.resolveTransactionState(transaction));
+      const resolved = this.resolveTransactionState(transaction);
+      this.transactions.set(txId, resolved);
+      this.emitTransitionEvents(transaction, resolved);
     }
+  }
+
+  private storeTransaction(
+    txId: string,
+    transaction: OnchainTransactionRecord,
+    eventKind: Extract<OnchainIndexerHookEvent["kind"], "tracked" | "included">,
+  ): OnchainTransactionRecord {
+    const previousTransaction = this.transactions.get(txId);
+    const resolved = this.resolveTransactionState(transaction);
+    this.transactions.set(txId, resolved);
+    this.emitHook(eventKind, resolved, previousTransaction);
+    this.emitTransitionEvents(previousTransaction, resolved);
+    return resolved;
+  }
+
+  private emitTransitionEvents(
+    previousTransaction: OnchainTransactionRecord | undefined,
+    nextTransaction: OnchainTransactionRecord,
+  ): void {
+    if (!previousTransaction || this.transactionsEqual(previousTransaction, nextTransaction)) {
+      return;
+    }
+
+    if (previousTransaction.status !== nextTransaction.status) {
+      this.emitHook("status_changed", nextTransaction, previousTransaction);
+    }
+    if (previousTransaction.status !== "reorged" && nextTransaction.status === "reorged") {
+      this.emitHook("reorged", nextTransaction, previousTransaction);
+    }
+    if (previousTransaction.status !== "finalized" && nextTransaction.status === "finalized") {
+      this.emitHook("finalized", nextTransaction, previousTransaction);
+    }
+  }
+
+  private emitHook(
+    kind: OnchainIndexerHookEvent["kind"],
+    transaction: OnchainTransactionRecord,
+    previousTransaction?: OnchainTransactionRecord,
+  ): void {
+    if (this.hooks.length === 0) {
+      return;
+    }
+
+    const event: OnchainIndexerHookEvent = {
+      kind,
+      transaction: this.cloneTransaction(transaction),
+      previousTransaction: previousTransaction ? this.cloneTransaction(previousTransaction) : undefined,
+      summary: this.getSummary(),
+    };
+
+    for (const hook of this.hooks) {
+      void hook(event);
+    }
+  }
+
+  private transactionsEqual(left: OnchainTransactionRecord, right: OnchainTransactionRecord): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
   }
 
   private resolveTransactionState(transaction: OnchainTransactionRecord): OnchainTransactionRecord {

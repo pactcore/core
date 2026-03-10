@@ -18,6 +18,15 @@ import type { AntiSpamAction } from "../domain/anti-spam";
 import type { DisputeCase } from "../domain/dispute-resolution";
 import type { ValidationOutcome } from "../domain/validation-pipeline";
 import type { ZKProof, ZKProofRequest, ZKProofType } from "../domain/zk-proofs";
+import type {
+  ExternalZKProveRequest,
+  ExternalZKProveResponse,
+  ExternalZKVerifyRequest,
+  ExternalZKVerifyResponse,
+  ZKArtifactDescriptor,
+  ZKArtifactManifest,
+  ZKVerificationReceipt,
+} from "../domain/zk-bridge";
 import type { EscrowAccount } from "../blockchain/abstraction";
 import type {
   CreditLine,
@@ -450,11 +459,34 @@ export interface ZKVerifier {
   verify(proof: ZKProof): Promise<boolean>;
 }
 
+export interface TraceableZKVerifier extends ZKVerifier {
+  verifyWithReceipt(proof: ZKProof): Promise<ZKVerificationReceipt>;
+}
+
 export interface ZKProofRepository {
   save(proof: ZKProof): Promise<void>;
   getById(id: string): Promise<ZKProof | undefined>;
   getByProver(proverId: string): Promise<ZKProof[]>;
   getByType(type: ZKProofType): Promise<ZKProof[]>;
+}
+
+export interface ZKArtifactManifestRepository {
+  save(manifest: ZKArtifactManifest): Promise<void>;
+  getById(id: string): Promise<ZKArtifactManifest | undefined>;
+  getByType(type: ZKProofType, manifestVersion?: string): Promise<ZKArtifactManifest | undefined>;
+}
+
+export interface ZKVerificationReceiptRepository {
+  save(receipt: ZKVerificationReceipt): Promise<void>;
+  listByProofId(proofId: string): Promise<ZKVerificationReceipt[]>;
+}
+
+export interface ExternalZKProverAdapter extends HealthCheckableAdapter {
+  readonly adapterName?: string;
+  readonly durability?: AdapterDurability;
+  loadArtifact?(artifact: ZKArtifactDescriptor): Promise<string | Uint8Array>;
+  prove(request: ExternalZKProveRequest): Promise<ExternalZKProveResponse>;
+  verify(request: ExternalZKVerifyRequest): Promise<ExternalZKVerifyResponse>;
 }
 
 // ── PactData contracts ─────────────────────────────────────────

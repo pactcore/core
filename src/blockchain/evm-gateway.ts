@@ -13,15 +13,14 @@ import {
 } from "./abi-encoder";
 import type { ContractAddresses } from "./contract-abis";
 import { MockRpcProvider, type RpcProvider } from "../infrastructure/blockchain/mock-rpc-provider";
+import {
+  normalizeLikeAddress,
+  resolveTransactionSigner,
+  submitSignedTransaction,
+  type TransactionSigner,
+} from "./providers";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-
-interface SerializedTxPayload {
-  from: string;
-  to: string;
-  data: string;
-  nonce: number;
-}
 
 interface EscrowRecipients {
   worker: string;
@@ -34,6 +33,7 @@ export interface EvmBlockchainGatewayConfig {
   rpcUrl: string;
   contractAddresses: ContractAddresses;
   signerPrivateKey?: string;
+  signer?: TransactionSigner;
   rpcProvider?: RpcProvider;
 }
 
@@ -41,20 +41,19 @@ export interface EvmIdentitySBTContractClientConfig {
   rpcUrl: string;
   contractAddress: string;
   signerPrivateKey?: string;
+  signer?: TransactionSigner;
   rpcProvider?: RpcProvider;
 }
 
 export class EvmBlockchainGateway implements BlockchainGateway {
   private readonly rpcProvider: RpcProvider;
-  private readonly signerAddress: string;
+  private readonly signer: TransactionSigner;
   private readonly releaseTxIdsByTask = new Map<string, string>();
   private txNonce = 0;
 
   constructor(private readonly config: EvmBlockchainGatewayConfig) {
     this.rpcProvider = config.rpcProvider ?? new FetchRpcProvider(config.rpcUrl);
-    this.signerAddress = config.signerPrivateKey
-      ? normalizeLikeAddress(config.signerPrivateKey)
-      : normalizeLikeAddress("pact-network-signer");
+    this.signer = resolveTransactionSigner(config.signer, config.signerPrivateKey, "pact-network-signer");
   }
 
   async createEscrow(taskId: string, payerId: string, amountCents: number): Promise<EscrowAccount> {
@@ -128,21 +127,13 @@ export class EvmBlockchainGateway implements BlockchainGateway {
   }
 
   private async sendRawTransaction(to: string, data: string): Promise<string> {
-    const payload: SerializedTxPayload = {
-      from: this.signerAddress,
-      to: normalizeLikeAddress(to),
-      data,
-      nonce: this.txNonce,
-    };
+    const nonce = this.txNonce;
     this.txNonce += 1;
-
-    const rawTx = hexEncodeUtf8(JSON.stringify(payload));
-    const result = await this.rpcProvider.request("eth_sendRawTransaction", [rawTx]);
-
-    if (typeof result === "string") {
-      return result;
-    }
-    return `0x${keccak256Hex(rawTx)}`;
+    return submitSignedTransaction(this.rpcProvider, this.signer, {
+      to,
+      data,
+      nonce,
+    });
   }
 
   private resolvePayoutRecipients(payouts: Record<string, number>): EscrowRecipients {
@@ -174,14 +165,16 @@ export class EvmBlockchainGateway implements BlockchainGateway {
 
 export class EvmIdentitySBTContractClient implements IdentitySBTContractClient {
   private readonly rpcProvider: RpcProvider;
-  private readonly signerAddress: string;
+  private readonly signer: TransactionSigner;
   private txNonce = 0;
 
   constructor(private readonly config: EvmIdentitySBTContractClientConfig) {
     this.rpcProvider = config.rpcProvider ?? new FetchRpcProvider(config.rpcUrl);
-    this.signerAddress = config.signerPrivateKey
-      ? normalizeLikeAddress(config.signerPrivateKey)
-      : normalizeLikeAddress("pact-network-identity-signer");
+    this.signer = resolveTransactionSigner(
+      config.signer,
+      config.signerPrivateKey,
+      "pact-network-identity-signer",
+    );
   }
 
   async mint(
@@ -250,21 +243,13 @@ export class EvmIdentitySBTContractClient implements IdentitySBTContractClient {
   }
 
   private async sendRawTransaction(to: string, data: string): Promise<string> {
-    const payload: SerializedTxPayload = {
-      from: this.signerAddress,
-      to: normalizeLikeAddress(to),
-      data,
-      nonce: this.txNonce,
-    };
+    const nonce = this.txNonce;
     this.txNonce += 1;
-
-    const rawTx = hexEncodeUtf8(JSON.stringify(payload));
-    const result = await this.rpcProvider.request("eth_sendRawTransaction", [rawTx]);
-
-    if (typeof result === "string") {
-      return result;
-    }
-    return `0x${keccak256Hex(rawTx)}`;
+    return submitSignedTransaction(this.rpcProvider, this.signer, {
+      to,
+      data,
+      nonce,
+    });
   }
 }
 
@@ -313,24 +298,6 @@ class FetchRpcProvider implements RpcProvider {
 function findRecipientId(recipientIds: string[], token: string): string | undefined {
   const lowered = token.toLowerCase();
   return recipientIds.find((id) => id.toLowerCase().includes(lowered));
-}
-
-function normalizeLikeAddress(value: string): string {
-  const normalized = value.toLowerCase();
-  if (/^0x[0-9a-f]{40}$/.test(normalized)) {
-    return normalized;
-  }
-  const hash = keccak256Hex(normalized);
-  return `0x${hash.slice(24)}`;
-}
-
-function hexEncodeUtf8(value: string): string {
-  const bytes = new TextEncoder().encode(value);
-  let hex = "";
-  for (const byte of bytes) {
-    hex += byte.toString(16).padStart(2, "0");
-  }
-  return `0x${hex}`;
 }
 
 function toSafeNumber(value: unknown): number {

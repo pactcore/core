@@ -649,13 +649,19 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
   });
 
   app.post("/zk/proofs/:id/verify", async (c) => {
-    const valid = await container.pactZK.verifyProof(c.req.param("id"));
-    return c.json({ valid });
+    const proofId = c.req.param("id");
+    const valid = await container.pactZK.verifyProof(proofId);
+    const receipts = await container.pactZK.getVerificationReceipts(proofId);
+    return c.json({ valid, receipt: receipts.at(-1) });
   });
 
   app.get("/zk/proofs/:id", async (c) => {
     const proof = await container.pactZK.getProof(c.req.param("id"));
     return c.json(proof);
+  });
+
+  app.get("/zk/proofs/:id/receipts", async (c) => {
+    return c.json(await container.pactZK.getVerificationReceipts(c.req.param("id")));
   });
 
   app.get("/zk/circuits/:type", async (c) => {

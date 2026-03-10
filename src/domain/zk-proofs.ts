@@ -1,11 +1,23 @@
 export type ZKProofType = "location" | "completion" | "identity" | "reputation";
 
+export interface ZKProofBridgeMetadata {
+  adapter: string;
+  manifestId: string;
+  manifestVersion: string;
+  manifestIntegrity: string;
+  traceId: string;
+  proofDigest: string;
+  adapterReceiptId?: string;
+}
+
 export interface ZKProofRequest {
   type: ZKProofType;
   proverId: string;
   challenge: string;
   publicInputs: Record<string, unknown>;
   createdAt: number;
+  manifestVersion?: string;
+  traceId?: string;
 }
 
 export interface ZKProof {
@@ -17,6 +29,7 @@ export interface ZKProof {
   proof: string;
   verified: boolean;
   createdAt: number;
+  bridge?: ZKProofBridgeMetadata;
 }
 
 export interface ZKLocationClaim {

@@ -1,17 +1,16 @@
 import { encodeFunction, functionSelectorFromSignature, keccak256Hex } from "../blockchain/abi-encoder";
 import {
+  normalizeLikeAddress,
+  resolveTransactionSigner,
+  submitSignedTransaction,
+  type TransactionSigner,
+} from "../blockchain/providers";
+import {
   MockRpcProvider,
   type RpcProvider,
 } from "../infrastructure/blockchain/mock-rpc-provider";
 
 const DEFAULT_GOVERNANCE_CONTRACT_ADDRESS = "0x5555555555555555555555555555555555555555";
-
-interface SerializedTxPayload {
-  from: string;
-  to: string;
-  data: string;
-  nonce: number;
-}
 
 export type GovernanceVoteChoice = "for" | "against" | "abstain";
 
@@ -85,6 +84,7 @@ export interface ExecuteGovernanceProposalInput {
 export interface GovernanceBridgeConfig {
   contractAddress?: string;
   signerPrivateKey?: string;
+  signer?: TransactionSigner;
   rpcProvider?: RpcProvider;
   now?: () => number;
 }
@@ -95,7 +95,7 @@ interface StoredGovernanceProposal extends Omit<GovernanceProposal, "status" | "
 
 export class MockEvmGovernanceBridge {
   private readonly rpcProvider: RpcProvider;
-  private readonly signerAddress: string;
+  private readonly signer: TransactionSigner;
   private readonly now: () => number;
   private readonly contractAddress: string;
   private readonly proposals = new Map<string, StoredGovernanceProposal>();
@@ -105,9 +105,11 @@ export class MockEvmGovernanceBridge {
 
   constructor(config: GovernanceBridgeConfig = {}) {
     this.rpcProvider = config.rpcProvider ?? new MockRpcProvider();
-    this.signerAddress = config.signerPrivateKey
-      ? normalizeLikeAddress(config.signerPrivateKey)
-      : normalizeLikeAddress("pact-network-governance-signer");
+    this.signer = resolveTransactionSigner(
+      config.signer,
+      config.signerPrivateKey,
+      "pact-network-governance-signer",
+    );
     this.now = config.now ?? (() => Date.now());
     this.contractAddress = normalizeLikeAddress(
       config.contractAddress ?? DEFAULT_GOVERNANCE_CONTRACT_ADDRESS,
@@ -315,20 +317,13 @@ export class MockEvmGovernanceBridge {
   }
 
   private async sendRawTransaction(to: string, data: string): Promise<string> {
-    const payload: SerializedTxPayload = {
-      from: this.signerAddress,
-      to: normalizeLikeAddress(to),
-      data,
-      nonce: this.txNonce,
-    };
+    const nonce = this.txNonce;
     this.txNonce += 1;
-
-    const rawTx = hexEncodeUtf8(JSON.stringify(payload));
-    const result = await this.rpcProvider.request("eth_sendRawTransaction", [rawTx]);
-    if (typeof result === "string") {
-      return result;
-    }
-    return `0x${keccak256Hex(rawTx)}`;
+    return submitSignedTransaction(this.rpcProvider, this.signer, {
+      to,
+      data,
+      nonce,
+    });
   }
 }
 
@@ -391,24 +386,6 @@ function assertTimestamp(value: unknown, fieldName: string): number {
     throw new Error(`${fieldName} must be a non-negative timestamp`);
   }
   return Math.floor(value);
-}
-
-function normalizeLikeAddress(value: string): string {
-  const normalized = value.toLowerCase();
-  if (/^0x[0-9a-f]{40}$/.test(normalized)) {
-    return normalized;
-  }
-  const hash = keccak256Hex(normalized);
-  return `0x${hash.slice(24)}`;
-}
-
-function hexEncodeUtf8(value: string): string {
-  const bytes = new TextEncoder().encode(value);
-  let hex = "";
-  for (const byte of bytes) {
-    hex += byte.toString(16).padStart(2, "0");
-  }
-  return `0x${hex}`;
 }
 
 function identifierToUint256(identifier: string): bigint {

@@ -1,10 +1,17 @@
-import type { ZKProofRepository, ZKProver, ZKVerifier } from "../contracts";
+import type {
+  TraceableZKVerifier,
+  ZKProofRepository,
+  ZKProver,
+  ZKVerificationReceiptRepository,
+  ZKVerifier,
+} from "../contracts";
 import { generateId } from "../utils";
 import { getCircuitDefinition as getCircuitDefinitionByType, type CircuitDefinition } from "../../domain/zk-circuits";
 import {
   verifyFormalSecurityProperties,
   type FormalProof,
 } from "../../domain/zk-formal-verification";
+import type { ZKVerificationReceipt } from "../../domain/zk-bridge";
 import type {
   ZKCompletionClaim,
   ZKIdentityClaim,
@@ -28,6 +35,7 @@ export class PactZK {
     private readonly prover: ZKProver,
     private readonly verifier: ZKVerifier,
     private readonly proofRepository: ZKProofRepository,
+    private readonly verificationReceiptRepository?: ZKVerificationReceiptRepository,
   ) {}
 
   async generateLocationProof(proverId: string, claim: ZKLocationClaim): Promise<ZKProof> {
@@ -52,7 +60,15 @@ export class PactZK {
       return false;
     }
 
-    const verified = await this.verifier.verify(proof);
+    const receipt = this.isTraceableVerifier(this.verifier)
+      ? await this.verifier.verifyWithReceipt(proof)
+      : undefined;
+    const verified = receipt?.verified ?? (await this.verifier.verify(proof));
+
+    if (receipt && this.verificationReceiptRepository) {
+      await this.verificationReceiptRepository.save(receipt);
+    }
+
     await this.proofRepository.save({
       ...proof,
       verified,
@@ -67,6 +83,10 @@ export class PactZK {
 
   async listProofsByProver(proverId: string): Promise<ZKProof[]> {
     return this.proofRepository.getByProver(proverId);
+  }
+
+  async getVerificationReceipts(proofId: string): Promise<ZKVerificationReceipt[]> {
+    return this.verificationReceiptRepository?.listByProofId(proofId) ?? [];
   }
 
   getCircuitDefinition(proofType: ZKProofType): CircuitDefinition {
@@ -112,5 +132,9 @@ export class PactZK {
     const proof = await this.prover.generate(request, witness);
     await this.proofRepository.save(proof);
     return proof;
+  }
+
+  private isTraceableVerifier(verifier: ZKVerifier): verifier is TraceableZKVerifier {
+    return "verifyWithReceipt" in verifier;
   }
 }
