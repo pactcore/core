@@ -34,6 +34,19 @@ export {
   type VoteGovernanceProposalInput,
 } from "./domain/governance-bridge";
 export {
+  OnchainFinalityRuntime,
+  type OnchainFinalityRuntimeConfig,
+  type OnchainFinalitySummary,
+  type OnchainTransactionOperation,
+  type OnchainTransactionPage,
+  type OnchainTransactionQuery,
+  type OnchainTransactionRecord,
+  type OnchainTransactionStatus,
+  type RecordCanonicalBlockInput,
+  type RecordOnchainTransactionInclusionInput,
+  type TrackOnchainTransactionInput,
+} from "./domain/onchain-finality";
+export {
   MockEvmRewardsBridge,
   type EpochRewardDistribution,
   type EpochRewardsSyncResult,
@@ -352,6 +365,7 @@ export { PactSecurity } from "./application/modules/pact-security";
 export { PactAnalytics } from "./application/modules/pact-analytics";
 export { PactEcosystem } from "./application/modules/pact-ecosystem";
 export { PactReconciliation } from "./application/modules/pact-reconciliation";
+export { PactOnchain } from "./application/modules/pact-onchain";
 export type {
   ManagedSettlementConnector,
   SettlementConnectorCredentialFieldSchema,

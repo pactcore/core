@@ -217,6 +217,28 @@ describe("Economics settlement API", () => {
     const invalidHighLimitResponse = await app.request("/economics/reconciliation/pending?limit=201");
     expect(invalidHighLimitResponse.status).toBe(400);
 
+    const summaryResponse = await app.request("/economics/reconciliation/summary");
+    expect(summaryResponse.status).toBe(200);
+    const summary = (await summaryResponse.json()) as {
+      pendingSettlementCount: number;
+      pendingRecordCount: number;
+      failedSettlementCount: number;
+    };
+    expect(summary.pendingSettlementCount).toBe(2);
+    expect(summary.pendingRecordCount).toBe(6);
+    expect(summary.failedSettlementCount).toBe(0);
+
+    const filteredPendingResponse = await app.request(
+      "/economics/reconciliation/queue?state=pending&connector=cloud_credit_billing&settlementId=settlement-pending-1",
+    );
+    expect(filteredPendingResponse.status).toBe(200);
+    const filteredPendingQueue = (await filteredPendingResponse.json()) as {
+      items: Array<{ settlementId: string; connectors: string[] }>;
+    };
+    expect(filteredPendingQueue.items).toHaveLength(1);
+    expect(filteredPendingQueue.items[0]?.settlementId).toBe("settlement-pending-1");
+    expect(filteredPendingQueue.items[0]?.connectors).toContain("cloud_credit_billing");
+
     const failingLlmConnector = new InMemoryLlmTokenMeteringConnector({
       retryPolicy: { maxRetries: 0, backoffMs: 0 },
       circuitBreaker: { failureThreshold: 1, cooldownMs: 60_000 },
@@ -260,6 +282,28 @@ describe("Economics settlement API", () => {
     expect(failedQueue.items).toHaveLength(1);
     expect(failedQueue.items[0]?.state).toBe("failed");
     expect(failedQueue.items[0]?.lastError).toContain("connector breaker test");
+
+    const failedSummaryResponse = await failingApp.request("/economics/reconciliation/summary");
+    expect(failedSummaryResponse.status).toBe(200);
+    const failedSummary = (await failedSummaryResponse.json()) as {
+      failedSettlementCount: number;
+      failedRecordCount: number;
+      pendingSettlementCount: number;
+    };
+    expect(failedSummary.failedSettlementCount).toBe(1);
+    expect(failedSummary.failedRecordCount).toBe(1);
+    expect(failedSummary.pendingSettlementCount).toBe(0);
+
+    const failedQueryResponse = await failingApp.request(
+      "/economics/reconciliation/queue?state=failed&idempotencyKey=failing-route-key",
+    );
+    expect(failedQueryResponse.status).toBe(200);
+    const failedQuery = (await failedQueryResponse.json()) as {
+      items: Array<{ settlementId: string; idempotencyKey?: string }>;
+    };
+    expect(failedQuery.items).toHaveLength(1);
+    expect(failedQuery.items[0]?.settlementId).toBe("settlement-failed-1");
+    expect(failedQuery.items[0]?.idempotencyKey).toBe("failing-route-key");
 
     const healthResponse = await failingApp.request("/economics/connectors/health");
     expect(healthResponse.status).toBe(200);

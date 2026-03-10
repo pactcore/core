@@ -75,6 +75,7 @@ export class MockEvmRewardsBridge {
   private readonly now: () => number;
   private readonly contractAddress: string;
   private readonly rewardsByEpoch = new Map<number, Map<string, ParticipantEpochReward>>();
+  private lastClaimSyncTxId?: string;
   private txNonce = 0;
   private txCounter = 0;
 
@@ -161,7 +162,7 @@ export class MockEvmRewardsBridge {
       BigInt(claimedEpochCount),
       BigInt(totalClaimedCents),
     ]);
-    await this.sendRawTransaction(
+    this.lastClaimSyncTxId = await this.sendRawTransaction(
       this.contractAddress,
       withSelector("syncClaimStatus(address,uint256,uint256)", data),
     );
@@ -196,6 +197,10 @@ export class MockEvmRewardsBridge {
 
   private getEpochRewardsSnapshot(epochRewards: Map<string, ParticipantEpochReward>): ParticipantEpochReward[] {
     return [...epochRewards.values()].map((reward) => ({ ...reward }));
+  }
+
+  getLastClaimSyncTxId(): string | undefined {
+    return this.lastClaimSyncTxId;
   }
 
   private async sendRawTransaction(to: string, data: string): Promise<string> {

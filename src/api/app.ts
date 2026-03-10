@@ -1349,19 +1349,58 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(await container.pactReconciliation.runReconciliationCycle(), 201);
   });
 
+  app.get("/economics/reconciliation/summary", async (c) => {
+    return c.json(await container.pactReconciliation.getReconciliationSummary());
+  });
+
   app.get("/economics/reconciliation/unreconciled", async (c) => {
     return c.json(await container.pactReconciliation.listUnreconciledSettlements());
   });
 
-  app.get("/economics/reconciliation/pending", async (c) => {
-    const state = c.req.query("state");
-    if (state && !isReconciliationQueueState(state)) {
+  app.get("/economics/reconciliation/queue", async (c) => {
+    const stateValue = c.req.query("state");
+    if (stateValue && !isReconciliationQueueState(stateValue)) {
       throw new HTTPException(400, { message: "Invalid reconciliation queue state" });
     }
+    const state = isReconciliationQueueState(stateValue) ? stateValue : undefined;
+
+    const connectorValue = c.req.query("connector");
+    if (connectorValue && !isSettlementRecordConnector(connectorValue)) {
+      throw new HTTPException(400, { message: "Invalid settlement connector" });
+    }
+    const connector = isSettlementRecordConnector(connectorValue) ? connectorValue : undefined;
 
     return c.json(
       await container.pactReconciliation.listReconciliationQueue({
         state,
+        connector,
+        settlementId: c.req.query("settlementId"),
+        idempotencyKey: c.req.query("idempotencyKey"),
+        cursor: c.req.query("cursor"),
+        limit: parseOptionalBoundedIntegerQuery(c.req.query("limit"), "limit", 1, 200),
+      }),
+    );
+  });
+
+  app.get("/economics/reconciliation/pending", async (c) => {
+    const stateValue = c.req.query("state");
+    if (stateValue && !isReconciliationQueueState(stateValue)) {
+      throw new HTTPException(400, { message: "Invalid reconciliation queue state" });
+    }
+    const state = isReconciliationQueueState(stateValue) ? stateValue : undefined;
+
+    const connectorValue = c.req.query("connector");
+    if (connectorValue && !isSettlementRecordConnector(connectorValue)) {
+      throw new HTTPException(400, { message: "Invalid settlement connector" });
+    }
+    const connector = isSettlementRecordConnector(connectorValue) ? connectorValue : undefined;
+
+    return c.json(
+      await container.pactReconciliation.listReconciliationQueue({
+        state,
+        connector,
+        settlementId: c.req.query("settlementId"),
+        idempotencyKey: c.req.query("idempotencyKey"),
         cursor: c.req.query("cursor"),
         limit: parseOptionalBoundedIntegerQuery(c.req.query("limit"), "limit", 1, 200),
       }),
@@ -1465,6 +1504,45 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
         : [],
     });
     return c.json(proposal, 201);
+  });
+
+  app.get("/onchain/finality/summary", async (c) => {
+    return c.json(container.pactOnchain.getFinalitySummary());
+  });
+
+  app.get("/onchain/finality/transactions", async (c) => {
+    const statusValue = c.req.query("status");
+    if (statusValue && !isOnchainTransactionStatus(statusValue) && statusValue !== "all") {
+      throw new HTTPException(400, { message: "Invalid onchain transaction status" });
+    }
+    const status = statusValue === "all" || isOnchainTransactionStatus(statusValue)
+      ? statusValue
+      : undefined;
+
+    const operationValue = c.req.query("operation");
+    if (operationValue && !isOnchainTransactionOperation(operationValue)) {
+      throw new HTTPException(400, { message: "Invalid onchain transaction operation" });
+    }
+    const operation = isOnchainTransactionOperation(operationValue) ? operationValue : undefined;
+
+    return c.json(container.pactOnchain.listTransactions({
+      status,
+      operation,
+      participantId: c.req.query("participantId"),
+      proposalId: c.req.query("proposalId"),
+      referenceId: c.req.query("referenceId"),
+      epoch: parseOptionalMinimumIntegerQuery(c.req.query("epoch"), "epoch", 0),
+      cursor: c.req.query("cursor"),
+      limit: parseOptionalBoundedIntegerQuery(c.req.query("limit"), "limit", 1, 200),
+    }));
+  });
+
+  app.get("/onchain/finality/transactions/:txId", async (c) => {
+    const transaction = container.pactOnchain.getTransaction(c.req.param("txId"));
+    if (!transaction) {
+      throw new HTTPException(404, { message: "Onchain transaction not found" });
+    }
+    return c.json(transaction);
   });
 
   app.post("/governance/proposals/:id/vote", async (c) => {
@@ -1875,6 +1953,29 @@ function isSettlementRecordConnector(
 
 function isReconciliationQueueState(value?: string): value is "pending" | "failed" | "all" {
   return value === "pending" || value === "failed" || value === "all";
+}
+
+function isOnchainTransactionStatus(
+  value?: string,
+): value is "submitted" | "confirmed" | "finalized" | "reorged" {
+  return value === "submitted" || value === "confirmed" || value === "finalized" || value === "reorged";
+}
+
+function isOnchainTransactionOperation(
+  value?: string,
+): value is
+  | "governance_proposal_create"
+  | "governance_proposal_vote"
+  | "governance_proposal_execute"
+  | "rewards_epoch_sync"
+  | "rewards_claim_sync" {
+  return (
+    value === "governance_proposal_create" ||
+    value === "governance_proposal_vote" ||
+    value === "governance_proposal_execute" ||
+    value === "rewards_epoch_sync" ||
+    value === "rewards_claim_sync"
+  );
 }
 
 function rethrowParticipantNotFound(error: unknown): never {

@@ -125,6 +125,28 @@ Converts a multi-asset compensation model into a single reference asset quote.
 
 Builds a settlement routing plan by asset class/rail (onchain stablecoin, llm metering, cloud billing, api quota, custom).
 
+`GET /economics/reconciliation/summary`
+
+Returns pending/failed reconciliation counts plus connector health.
+
+`GET /economics/reconciliation/queue?state=pending&connector=cloud_credit_billing&settlementId=settlement-1`
+
+Returns the reconciliation queue with optional filters for state, connector, settlement id, and failed idempotency key.
+
+## Onchain Finality
+
+`GET /onchain/finality/summary`
+
+Returns the tracked onchain transaction counts by submitted/confirmed/finalized/reorged state.
+
+`GET /onchain/finality/transactions?status=finalized&operation=governance_proposal_create&proposalId=proposal-1`
+
+Lists tracked onchain writes with optional filters for status, operation, proposal, participant, epoch, and cursor pagination.
+
+`GET /onchain/finality/transactions/:txId`
+
+Returns the current finality snapshot for a specific tracked transaction.
+
 ## Other Modules
 
 - `POST /compute/jobs`

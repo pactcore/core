@@ -35,6 +35,9 @@ export type ReconciliationQueueState = "pending" | "failed" | "all";
 
 export interface ReconciliationQueueRequest {
   state?: ReconciliationQueueState;
+  connector?: SettlementRecord["connector"];
+  settlementId?: string;
+  idempotencyKey?: string;
   cursor?: string;
   limit?: number;
 }
@@ -56,6 +59,14 @@ export interface ReconciliationQueueItem {
 export interface ReconciliationQueuePage {
   items: ReconciliationQueueItem[];
   nextCursor?: string;
+}
+
+export interface ReconciliationSummary {
+  pendingSettlementCount: number;
+  pendingRecordCount: number;
+  failedSettlementCount: number;
+  failedRecordCount: number;
+  connectorHealth: ConnectorHealthReport[];
 }
 
 export class PactReconciliation {
@@ -111,15 +122,11 @@ export class PactReconciliation {
     const limit = this.normalizeLimit(input.limit);
     const state = input.state ?? "pending";
 
-    const pendingItems = (await this.listUnreconciledSettlements()).map((settlement) =>
-      this.buildPendingQueueItem(settlement),
-    );
-    const failedItems = this.pactEconomics
-      .listFailedSettlementExecutions()
-      .map((failure) => this.buildFailedQueueItem(failure));
-
-    const allItems = [...pendingItems, ...failedItems]
+    const allItems = (await this.buildAllQueueItems())
       .filter((item) => state === "all" || item.state === state)
+      .filter((item) => !input.connector || item.connectors.includes(input.connector))
+      .filter((item) => !input.settlementId || item.settlementId === input.settlementId)
+      .filter((item) => !input.idempotencyKey || item.idempotencyKey === input.idempotencyKey)
       .sort((left, right) => {
         if (left.updatedAt === right.updatedAt) {
           if (left.settlementId === right.settlementId) {
@@ -139,6 +146,23 @@ export class PactReconciliation {
     return {
       items,
       nextCursor,
+    };
+  }
+
+  async getReconciliationSummary(): Promise<ReconciliationSummary> {
+    const pendingItems = (await this.listUnreconciledSettlements()).map((settlement) =>
+      this.buildPendingQueueItem(settlement),
+    );
+    const failedItems = this.pactEconomics
+      .listFailedSettlementExecutions()
+      .map((failure) => this.buildFailedQueueItem(failure));
+
+    return {
+      pendingSettlementCount: pendingItems.length,
+      pendingRecordCount: pendingItems.reduce((sum, item) => sum + item.pendingRecordCount, 0),
+      failedSettlementCount: failedItems.length,
+      failedRecordCount: failedItems.reduce((sum, item) => sum + item.failedRecordCount, 0),
+      connectorHealth: this.getConnectorHealth(),
     };
   }
 
@@ -178,6 +202,17 @@ export class PactReconciliation {
       ...record,
       connectorMetadata: record.connectorMetadata ? { ...record.connectorMetadata } : undefined,
     };
+  }
+
+  private async buildAllQueueItems(): Promise<ReconciliationQueueItem[]> {
+    const pendingItems = (await this.listUnreconciledSettlements()).map((settlement) =>
+      this.buildPendingQueueItem(settlement),
+    );
+    const failedItems = this.pactEconomics
+      .listFailedSettlementExecutions()
+      .map((failure) => this.buildFailedQueueItem(failure));
+
+    return [...pendingItems, ...failedItems];
   }
 
   private buildPendingQueueItem(settlement: UnreconciledSettlementView): ReconciliationQueueItem {
