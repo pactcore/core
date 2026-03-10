@@ -114,6 +114,7 @@ describe("managed backend contracts", () => {
     expect(queueHealth?.state).toBe("healthy");
     expect(queueHealth?.profile?.endpoint).toBe("https://managed.example.com/compute/queue");
     expect(queueHealth?.profile?.credentialType).toBe("bearer");
+    expect(queueHealth?.profile?.requiredCredentialFields).toEqual(["token"]);
     expect(queueHealth?.features?.skeleton).toBe(true);
     expect(queueHealth?.features?.queuedMessages).toBe(1);
     expect(adapterHealthResponse.status).toBe(200);
@@ -985,6 +986,7 @@ describe("managed backend contracts", () => {
       profile: {
         providerId: "managed-compute",
         credentialType: "bearer",
+        requiredCredentialFields: ["token"],
         configuredCredentialFields: ["token"],
       },
     });
@@ -994,6 +996,7 @@ describe("managed backend contracts", () => {
       profile: {
         providerId: "managed-dev",
         credentialType: "oauth2",
+        requiredCredentialFields: ["accessToken"],
         configuredCredentialFields: ["accessToken"],
       },
     });
@@ -1053,12 +1056,14 @@ describe("managed backend contracts", () => {
     expect(computeBody.backends.find((entry) => entry.capability === "queue")).toMatchObject({
       state: "healthy",
       profile: {
+        requiredCredentialFields: ["token"],
         configuredCredentialFields: ["token"],
       },
     });
     expect(devBody.backends.find((entry) => entry.capability === "observability")).toMatchObject({
       state: "healthy",
       profile: {
+        requiredCredentialFields: ["accessToken"],
         configuredCredentialFields: ["accessToken", "clientEmail", "projectId"],
       },
     });
