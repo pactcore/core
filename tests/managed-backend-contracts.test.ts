@@ -224,7 +224,7 @@ describe("managed backend contracts", () => {
     const devObservabilityHealth = devBody.backends.find((entry) => entry.capability === "observability");
 
     expect(stored?.value).toBe("cid://asset-1");
-    expect(stored?.etag).toBe("managed-data-store:asset:1:1710000000000");
+    expect(stored?.etag?.startsWith("sha256:")).toBe(true);
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.key).toBe("asset:1");
     expect(page.nextCursor).toBe("asset:1");
@@ -243,8 +243,84 @@ describe("managed backend contracts", () => {
     expect(devObservabilityHealth?.profile?.endpoint).toBe("https://managed.example.com/dev/observability");
     expect(devObservabilityHealth?.profile?.credentialType).toBe("bearer");
     expect(devObservabilityHealth?.features?.skeleton).toBe(true);
-    expect(devObservabilityHealth?.features?.bufferedMetrics).toBe(1);
-    expect(devObservabilityHealth?.features?.bufferedTraces).toBe(1);
-    expect(devObservabilityHealth?.features?.lastFlushedAt).not.toBe("never");
+    expect(devObservabilityHealth?.features?.bufferedMetrics).toBe(0);
+    expect(devObservabilityHealth?.features?.bufferedTraces).toBe(0);
+    expect(devObservabilityHealth?.features?.flushCount).toBe(1);
+  });
+
+  it("reports degraded remote managed backend health when credentials are incomplete", async () => {
+    const dataStore = new RemoteHttpManagedStoreAdapterSkeleton<string>({
+      domain: "data",
+      profile: {
+        backendId: "managed-data-store",
+        providerId: "managed-data",
+        displayName: "Managed Data Store",
+        endpoint: "https://managed.example.com/data/store",
+        timeoutMs: 2_000,
+        credentialSchema: {
+          type: "api_key",
+          fields: [{ key: "apiKey", required: true, secret: true }],
+        },
+        configuredCredentialFields: [],
+      },
+    });
+    const devObservability = new RemoteHttpManagedObservabilityAdapterSkeleton({
+      domain: "dev",
+      profile: {
+        backendId: "managed-dev-observability",
+        providerId: "managed-dev",
+        displayName: "Managed Dev Observability",
+        endpoint: "https://managed.example.com/dev/observability",
+        timeoutMs: 2_000,
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        configuredCredentialFields: [],
+      },
+    });
+    const container = createContainer(undefined, {
+      managedBackends: {
+        data: {
+          store: dataStore,
+        },
+        dev: {
+          observability: devObservability,
+        },
+      },
+    });
+    const app = createApp(undefined, { container });
+
+    const dataResponse = await app.request("/data/backends/health");
+    const dataBody = (await dataResponse.json()) as {
+      status: string;
+      backends: Array<{
+        capability: string;
+        state: string;
+        lastError?: { code?: string };
+      }>;
+    };
+    const devResponse = await app.request("/dev/backends/health");
+    const devBody = (await devResponse.json()) as {
+      status: string;
+      backends: Array<{
+        capability: string;
+        state: string;
+        lastError?: { code?: string };
+      }>;
+    };
+
+    expect(dataResponse.status).toBe(200);
+    expect(devResponse.status).toBe(200);
+    expect(dataBody.status).toBe("degraded");
+    expect(devBody.status).toBe("degraded");
+    expect(dataBody.backends.find((entry) => entry.capability === "store")?.state).toBe("degraded");
+    expect(dataBody.backends.find((entry) => entry.capability === "store")?.lastError?.code).toBe(
+      "managed_backend_credentials_incomplete",
+    );
+    expect(devBody.backends.find((entry) => entry.capability === "observability")?.state).toBe("degraded");
+    expect(devBody.backends.find((entry) => entry.capability === "observability")?.lastError?.code).toBe(
+      "managed_backend_credentials_incomplete",
+    );
   });
 });
