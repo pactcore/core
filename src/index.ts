@@ -550,6 +550,8 @@ export { InMemoryComputeExecutionCheckpointStore } from "./infrastructure/comput
 export { DockerExecutionAdapter } from "./infrastructure/compute/docker-execution-adapter";
 export { PricingEngine } from "./infrastructure/compute/pricing-engine";
 export { RemoteHttpManagedQueueAdapterSkeleton } from "./infrastructure/managed/remote-http-managed-queue-adapter-skeleton";
+export { RemoteHttpManagedStoreAdapterSkeleton } from "./infrastructure/managed/remote-http-managed-store-adapter-skeleton";
+export { RemoteHttpManagedObservabilityAdapterSkeleton } from "./infrastructure/managed/remote-http-managed-observability-adapter-skeleton";
 export {
   calculateJobCost,
   findBestTier,

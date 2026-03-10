@@ -1,6 +1,4 @@
-import type { AdapterDurability } from "../../application/adapter-runtime";
 import {
-  summarizeManagedBackendProfile,
   type ManagedBackendDomain,
   type ManagedBackendHealthReport,
   type ManagedBackendProfile,
@@ -9,6 +7,11 @@ import {
   type ManagedQueueMessage,
   type ManagedQueueReceipt,
 } from "../../application/managed-backends";
+import {
+  cloneManagedBackendProfile,
+  createRemoteManagedBackendHealth,
+  REMOTE_MANAGED_BACKEND_DURABILITY,
+} from "./remote-http-managed-backend-skeleton-helpers";
 
 export interface RemoteHttpManagedQueueAdapterSkeletonOptions {
   domain: ManagedBackendDomain;
@@ -20,7 +23,7 @@ export class RemoteHttpManagedQueueAdapterSkeleton<TPayload = unknown>
 {
   readonly capability = "queue" as const;
   readonly mode = "remote" as const;
-  readonly durability: AdapterDurability = "remote";
+  readonly durability = REMOTE_MANAGED_BACKEND_DURABILITY;
   readonly domain: ManagedBackendDomain;
 
   private readonly profile: ManagedBackendProfile;
@@ -28,11 +31,7 @@ export class RemoteHttpManagedQueueAdapterSkeleton<TPayload = unknown>
 
   constructor(options: RemoteHttpManagedQueueAdapterSkeletonOptions) {
     this.domain = options.domain;
-    this.profile = {
-      ...options.profile,
-      configuredCredentialFields: [...(options.profile.configuredCredentialFields ?? [])],
-      metadata: options.profile.metadata ? { ...options.profile.metadata } : undefined,
-    };
+    this.profile = cloneManagedBackendProfile(options.profile);
   }
 
   async enqueue(message: ManagedQueueMessage<TPayload>): Promise<ManagedQueueReceipt> {
@@ -67,43 +66,17 @@ export class RemoteHttpManagedQueueAdapterSkeleton<TPayload = unknown>
   }
 
   getManagedHealth(): ManagedBackendHealthReport {
-    const requiredFields = (this.profile.credentialSchema?.fields ?? [])
-      .filter((field) => field.required)
-      .map((field) => field.key);
-    const configuredFields = new Set(this.profile.configuredCredentialFields ?? []);
-    const missingFields = requiredFields.filter((field) => !configuredFields.has(field));
-    const state = this.profile.endpoint && missingFields.length === 0 ? "healthy" : "degraded";
-
-    return {
-      name: `${this.domain}-remote-queue-backend`,
+    return createRemoteManagedBackendHealth({
       domain: this.domain,
       capability: "queue",
-      mode: "remote",
-      state,
-      checkedAt: Date.now(),
-      durable: true,
-      durability: this.durability,
+      profile: this.profile,
+      missingFieldsOperation: "configure_remote_queue",
       features: {
         managedQueue: true,
-        skeleton: true,
         queuedMessages: this.queued.size,
         scheduledMessages: this.getDepth().scheduled ?? 0,
       },
-      profile: summarizeManagedBackendProfile(this.profile),
-      lastError: missingFields.length > 0
-        ? {
-            adapter: this.domain,
-            operation: "configure_remote_queue",
-            code: "managed_backend_credentials_incomplete",
-            message: `Missing credential fields: ${missingFields.join(", ")}`,
-            retryable: false,
-            occurredAt: Date.now(),
-            details: {
-              missingFields: missingFields.join(","),
-            },
-          }
-        : undefined,
-    };
+    });
   }
 }
 
