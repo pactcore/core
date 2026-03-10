@@ -1,5 +1,8 @@
+import { aggregateAdapterHealth, type AdapterHealthReport, type AdapterHealthSummary } from "../adapter-runtime";
 import type {
   TraceableZKVerifier,
+  ZKArtifactManifestCatalog,
+  ZKBridgeRuntimeProvider,
   ZKProofRepository,
   ZKProver,
   ZKVerificationReceiptRepository,
@@ -11,7 +14,7 @@ import {
   verifyFormalSecurityProperties,
   type FormalProof,
 } from "../../domain/zk-formal-verification";
-import type { ZKVerificationReceipt } from "../../domain/zk-bridge";
+import type { ZKArtifactManifest, ZKBridgeRuntimeInfo, ZKVerificationReceipt } from "../../domain/zk-bridge";
 import type {
   ZKCompletionClaim,
   ZKIdentityClaim,
@@ -39,19 +42,19 @@ export class PactZK {
   ) {}
 
   async generateLocationProof(proverId: string, claim: ZKLocationClaim): Promise<ZKProof> {
-    return this.generateProof("location", proverId, claim, claim);
+    return this.generateProof("location", proverId, { ...claim }, claim);
   }
 
   async generateCompletionProof(proverId: string, claim: ZKCompletionClaim): Promise<ZKProof> {
-    return this.generateProof("completion", proverId, claim, claim);
+    return this.generateProof("completion", proverId, { ...claim }, claim);
   }
 
   async generateIdentityProof(proverId: string, claim: ZKIdentityClaim): Promise<ZKProof> {
-    return this.generateProof("identity", proverId, claim, claim);
+    return this.generateProof("identity", proverId, { ...claim }, claim);
   }
 
   async generateReputationProof(proverId: string, claim: ZKReputationClaim): Promise<ZKProof> {
-    return this.generateProof("reputation", proverId, claim, claim);
+    return this.generateProof("reputation", proverId, { ...claim }, claim);
   }
 
   async verifyProof(proofId: string): Promise<boolean> {
@@ -87,6 +90,30 @@ export class PactZK {
 
   async getVerificationReceipts(proofId: string): Promise<ZKVerificationReceipt[]> {
     return this.verificationReceiptRepository?.listByProofId(proofId) ?? [];
+  }
+
+  async getAdapterHealth(): Promise<AdapterHealthSummary> {
+    const adapters = [this.prover, this.verifier]
+      .filter((adapter, index, list) => list.indexOf(adapter) === index)
+      .filter(this.hasHealth);
+
+    const reports = await Promise.all(adapters.map((adapter) => adapter.getHealth()));
+    return aggregateAdapterHealth(reports);
+  }
+
+  async getBridgeRuntimeInfo(): Promise<ZKBridgeRuntimeInfo | undefined> {
+    const bridge = this.asBridgeRuntimeProvider(this.prover) ?? this.asBridgeRuntimeProvider(this.verifier);
+    return bridge?.getBridgeRuntimeInfo();
+  }
+
+  async getArtifactManifest(type: ZKProofType, manifestVersion?: string): Promise<ZKArtifactManifest | undefined> {
+    const catalog = this.asManifestCatalog(this.prover) ?? this.asManifestCatalog(this.verifier);
+    return catalog?.getArtifactManifest(type, manifestVersion);
+  }
+
+  async listArtifactManifests(type?: ZKProofType): Promise<ZKArtifactManifest[]> {
+    const catalog = this.asManifestCatalog(this.prover) ?? this.asManifestCatalog(this.verifier);
+    return catalog?.listArtifactManifests(type) ?? [];
   }
 
   getCircuitDefinition(proofType: ZKProofType): CircuitDefinition {
@@ -136,5 +163,21 @@ export class PactZK {
 
   private isTraceableVerifier(verifier: ZKVerifier): verifier is TraceableZKVerifier {
     return "verifyWithReceipt" in verifier;
+  }
+
+  private hasHealth(adapter: unknown): adapter is { getHealth: () => Promise<AdapterHealthReport> | AdapterHealthReport } {
+    return typeof adapter === "object" && adapter !== null && "getHealth" in adapter && typeof adapter.getHealth === "function";
+  }
+
+  private asBridgeRuntimeProvider(adapter: unknown): ZKBridgeRuntimeProvider | undefined {
+    return typeof adapter === "object" && adapter !== null && "getBridgeRuntimeInfo" in adapter
+      ? adapter as ZKBridgeRuntimeProvider
+      : undefined;
+  }
+
+  private asManifestCatalog(adapter: unknown): ZKArtifactManifestCatalog | undefined {
+    return typeof adapter === "object" && adapter !== null && "listArtifactManifests" in adapter
+      ? adapter as ZKArtifactManifestCatalog
+      : undefined;
   }
 }

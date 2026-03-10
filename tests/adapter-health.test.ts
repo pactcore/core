@@ -117,4 +117,26 @@ describe("adapter health routes", () => {
     expect(incompatibleHealth?.state).toBe("unhealthy");
     expect(incompatibleHealth?.compatibility?.compatible).toBe(false);
   });
+
+  test("reports zk bridge adapter health when bridge-local mode is configured", async () => {
+    const container = createContainer(undefined, {
+      env: {
+        PACT_ZK_PROVER_MODE: "bridge-local",
+        PACT_ZK_ADAPTER_NAME: "bridge-local-health",
+      },
+    });
+
+    const app = createApp(undefined, { container });
+    const response = await app.request("/zk/adapters/health");
+    const body = (await response.json()) as {
+      status: string;
+      adapters: Array<{ name: string; state: string; durability?: string }>;
+    };
+    const bridge = body.adapters.find((entry) => entry.name === "zk-prover-bridge");
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe("healthy");
+    expect(bridge?.state).toBe("healthy");
+    expect(bridge?.durability).toBe("memory");
+  });
 });

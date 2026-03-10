@@ -1,28 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import { AdapterOperationError } from "../src/application/adapter-runtime";
 import { PactZK } from "../src/application/modules/pact-zk";
-import {
-  computeZKArtifactIntegrity,
-  computeZKManifestIntegrity,
-  type ZKArtifactManifest,
-} from "../src/domain/zk-bridge";
-import { getCircuitDefinition } from "../src/domain/zk-circuits";
-import type { ZKProofType } from "../src/domain/zk-proofs";
+import { createDefaultZKArtifactManifest } from "../src/infrastructure/zk/default-zk-artifact-manifest-factory";
+import { DeterministicLocalZKProverAdapter } from "../src/infrastructure/zk/deterministic-local-zk-prover-adapter";
 import { InMemoryZKArtifactManifestRepository } from "../src/infrastructure/zk/in-memory-zk-artifact-manifest-repository";
 import { InMemoryZKProofRepository } from "../src/infrastructure/zk/in-memory-zk-proof-repository";
 import { InMemoryZKVerificationReceiptRepository } from "../src/infrastructure/zk/in-memory-zk-verification-receipt-repository";
-import { MockExternalZKProverAdapter } from "../src/infrastructure/zk/mock-external-zk-prover-adapter";
 import { ProductionZKProverBridge } from "../src/infrastructure/zk/production-zk-prover-bridge";
+import { RemoteHttpZKProverAdapterSkeleton } from "../src/infrastructure/zk/remote-http-zk-prover-adapter-skeleton";
 
 describe("ProductionZKProverBridge", () => {
-  test("generates bridge metadata and verification receipts", async () => {
+  test("generates bridge metadata, manifests, and verification receipts", async () => {
     const manifestRepository = new InMemoryZKArtifactManifestRepository();
     const receiptRepository = new InMemoryZKVerificationReceiptRepository();
-    const manifest = await createManifest("completion");
+    const manifest = createDefaultZKArtifactManifest("completion");
     await manifestRepository.save(manifest);
 
     const bridge = new ProductionZKProverBridge(
-      new MockExternalZKProverAdapter("appendix-c-adapter"),
+      new DeterministicLocalZKProverAdapter("appendix-c-adapter"),
       manifestRepository,
     );
     const pactZK = new PactZK(
@@ -41,32 +36,75 @@ describe("ProductionZKProverBridge", () => {
     expect(proof.bridge?.adapter).toBe("appendix-c-adapter");
     expect(proof.bridge?.manifestId).toBe(manifest.id);
     expect(proof.bridge?.manifestVersion).toBe(manifest.manifestVersion);
-    expect(proof.bridge?.proofDigest.length).toBe(64);
+    expect(proof.bridge?.manifestSchemaVersion).toBe(manifest.schemaVersion);
+    expect(proof.bridge?.runtimeVersion).toBe(manifest.runtimeVersion);
+    expect(proof.bridge?.proofDigest?.length).toBe(64);
+    expect(proof.bridge?.publicInputsDigest?.length).toBe(64);
 
+    const runtime = await pactZK.getBridgeRuntimeInfo();
+    const manifests = await pactZK.listArtifactManifests("completion");
     const verified = await pactZK.verifyProof(proof.id);
     const receipts = await pactZK.getVerificationReceipts(proof.id);
 
+    expect(runtime?.adapter).toBe("appendix-c-adapter");
+    expect(runtime?.features.manifestVersioning).toBe(true);
+    expect(manifests).toHaveLength(1);
+    expect(manifests[0]?.manifestIntegrity).toBe(manifest.manifestIntegrity);
     expect(verified).toBe(true);
     expect(receipts).toHaveLength(1);
     expect(receipts[0]?.proofId).toBe(proof.id);
     expect(receipts[0]?.manifestVersion).toBe(manifest.manifestVersion);
+    expect(receipts[0]?.manifestIntegrity).toBe(manifest.manifestIntegrity);
     expect(receipts[0]?.verifier).toBe("appendix-c-adapter");
     expect(receipts[0]?.traceId.includes("verify")).toBe(true);
   });
 
+  test("fails verification receipts when bridge traceability digests are tampered", async () => {
+    const manifestRepository = new InMemoryZKArtifactManifestRepository();
+    const proofRepository = new InMemoryZKProofRepository();
+    const receiptRepository = new InMemoryZKVerificationReceiptRepository();
+    await manifestRepository.save(createDefaultZKArtifactManifest("identity"));
+
+    const bridge = new ProductionZKProverBridge(
+      new DeterministicLocalZKProverAdapter("appendix-c-trace"),
+      manifestRepository,
+    );
+    const pactZK = new PactZK(bridge, bridge, proofRepository, receiptRepository);
+
+    const proof = await pactZK.generateIdentityProof("participant-1", {
+      participantId: "participant-1",
+      isHuman: true,
+    });
+
+    await proofRepository.save({
+      ...proof,
+      bridge: {
+        ...proof.bridge!,
+        proofDigest: "deadbeef",
+      },
+    });
+
+    const verified = await pactZK.verifyProof(proof.id);
+    const receipts = await pactZK.getVerificationReceipts(proof.id);
+
+    expect(verified).toBe(false);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.details?.reason).toBe("proof_digest_mismatch");
+    expect(receipts[0]?.details?.failureStage).toBe("bridge-trace");
+  });
+
   test("rejects manifest circuit version mismatches", async () => {
     const manifestRepository = new InMemoryZKArtifactManifestRepository();
-    await manifestRepository.save(
-      await createManifest("location", {
-        circuit: {
-          name: "PACT.LocationInRadius",
-          version: "9.9.9",
-          provingSystem: "groth16",
-        },
-      }),
-    );
+    const manifest = createDefaultZKArtifactManifest("location");
+    await manifestRepository.save({
+      ...manifest,
+      circuit: {
+        ...manifest.circuit,
+        version: "9.9.9",
+      },
+    });
 
-    const bridge = new ProductionZKProverBridge(new MockExternalZKProverAdapter(), manifestRepository);
+    const bridge = new ProductionZKProverBridge(new DeterministicLocalZKProverAdapter(), manifestRepository);
 
     await expect(
       bridge.generate(
@@ -89,28 +127,18 @@ describe("ProductionZKProverBridge", () => {
 
   test("rejects artifact integrity mismatches", async () => {
     const manifestRepository = new InMemoryZKArtifactManifestRepository();
-    await manifestRepository.save(
-      await createManifest("identity", {
-        artifacts: [
-          {
-            role: "wasm",
-            uri: "memory://identity/wasm",
-            version: "1.0.0",
+    const manifest = createDefaultZKArtifactManifest("identity");
+    await manifestRepository.save({
+      ...manifest,
+      artifacts: manifest.artifacts.map((artifact, index) => index === 0
+        ? {
+            ...artifact,
             integrity: "sha256:deadbeef",
-            inlineData: "identity-wasm-binary",
-          },
-          {
-            role: "verification-key",
-            uri: "memory://identity/vkey",
-            version: "1.0.0",
-            integrity: await computeZKArtifactIntegrity("identity-verification-key"),
-            inlineData: "identity-verification-key",
-          },
-        ],
-      }),
-    );
+          }
+        : artifact),
+    });
 
-    const bridge = new ProductionZKProverBridge(new MockExternalZKProverAdapter(), manifestRepository);
+    const bridge = new ProductionZKProverBridge(new DeterministicLocalZKProverAdapter(), manifestRepository);
 
     await expect(
       bridge.generate(
@@ -128,53 +156,23 @@ describe("ProductionZKProverBridge", () => {
       ),
     ).rejects.toThrow(AdapterOperationError);
   });
+
+  test("reports degraded remote skeleton health until configured", async () => {
+    const manifestRepository = new InMemoryZKArtifactManifestRepository();
+    await manifestRepository.save(createDefaultZKArtifactManifest("reputation"));
+
+    const bridge = new ProductionZKProverBridge(
+      new RemoteHttpZKProverAdapterSkeleton({
+        adapterName: "appendix-c-remote-skeleton",
+      }),
+      manifestRepository,
+    );
+
+    const health = await bridge.getHealth();
+    const runtime = await bridge.getBridgeRuntimeInfo();
+
+    expect(health.state).toBe("degraded");
+    expect(health.features?.manifestCatalog).toBe(true);
+    expect(runtime.features.remoteAdapterSkeleton).toBe(true);
+  });
 });
-
-async function createManifest(
-  proofType: ZKProofType,
-  overrides: Partial<ZKArtifactManifest> = {},
-): Promise<ZKArtifactManifest> {
-  const circuit = getCircuitDefinition(proofType);
-  const artifacts = overrides.artifacts ?? [
-    {
-      role: "wasm",
-      uri: `memory://${proofType}/circuit.wasm`,
-      version: "1.0.0",
-      integrity: await computeZKArtifactIntegrity(`${proofType}-wasm-binary`),
-      inlineData: `${proofType}-wasm-binary`,
-    },
-    {
-      role: "proving-key",
-      uri: `memory://${proofType}/proving.key`,
-      version: "1.0.0",
-      integrity: await computeZKArtifactIntegrity(`${proofType}-proving-key`),
-      inlineData: `${proofType}-proving-key`,
-    },
-    {
-      role: "verification-key",
-      uri: `memory://${proofType}/verification.key`,
-      version: "1.0.0",
-      integrity: await computeZKArtifactIntegrity(`${proofType}-verification-key`),
-      inlineData: `${proofType}-verification-key`,
-    },
-  ];
-  const manifestWithoutIntegrity = {
-    id: overrides.id ?? `manifest-${proofType}`,
-    proofType,
-    manifestVersion: overrides.manifestVersion ?? "1.0.0",
-    runtimeVersion: overrides.runtimeVersion ?? "0.2.0",
-    circuit: overrides.circuit ?? {
-      name: circuit.name,
-      version: circuit.version,
-      provingSystem: circuit.provingSystem,
-    },
-    artifacts,
-    createdAt: overrides.createdAt ?? 1_710_000_000_000,
-  };
-
-  return {
-    ...manifestWithoutIntegrity,
-    manifestIntegrity:
-      overrides.manifestIntegrity ?? (await computeZKManifestIntegrity(manifestWithoutIntegrity)),
-  };
-}

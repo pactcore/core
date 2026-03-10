@@ -9,24 +9,51 @@ export type ZKArtifactRole =
   | "srs"
   | "metadata";
 
+export type ZKIntegrityAlgorithm = "sha256";
+
+export type ZKArtifactSource = "inline" | "local" | "remote";
+
 export interface ZKArtifactDescriptor {
   role: ZKArtifactRole;
   uri: string;
   version: string;
   integrity: string;
+  integrityAlgorithm?: ZKIntegrityAlgorithm;
+  source?: ZKArtifactSource;
   bytes?: number;
   inlineData?: string;
 }
 
 export interface ZKArtifactManifest {
   id: string;
+  schemaVersion?: string;
   proofType: ZKProofType;
   manifestVersion: string;
   runtimeVersion: string;
+  integrityAlgorithm?: ZKIntegrityAlgorithm;
   circuit: Pick<CircuitDefinition, "name" | "version" | "provingSystem">;
   artifacts: ZKArtifactDescriptor[];
   createdAt: number;
+  publishedAt?: number;
+  artifactCount?: number;
   manifestIntegrity: string;
+}
+
+export interface ZKBridgeRuntimeInfo {
+  adapter: string;
+  runtimeVersion: string;
+  durability: "memory" | "filesystem" | "database" | "remote" | "unknown";
+  manifestCatalog: {
+    schemaVersions: string[];
+    manifestsByType: Partial<Record<ZKProofType, string[]>>;
+  };
+  features: {
+    manifestVersioning: boolean;
+    artifactIntegrity: boolean;
+    receiptTraceability: boolean;
+    deterministicLocalAdapter: boolean;
+    remoteAdapterSkeleton: boolean;
+  };
 }
 
 export interface ExternalZKProveRequest {

@@ -655,6 +655,29 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json({ valid, receipt: receipts.at(-1) });
   });
 
+  app.get("/zk/adapters/health", async (c) => {
+    return c.json(await container.pactZK.getAdapterHealth());
+  });
+
+  app.get("/zk/bridge/runtime", async (c) => {
+    return c.json((await container.pactZK.getBridgeRuntimeInfo()) ?? {
+      adapter: "in-memory-zk",
+      runtimeVersion: "0.2.0",
+      durability: "memory",
+      manifestCatalog: {
+        schemaVersions: [],
+        manifestsByType: {},
+      },
+      features: {
+        manifestVersioning: false,
+        artifactIntegrity: false,
+        receiptTraceability: false,
+        deterministicLocalAdapter: false,
+        remoteAdapterSkeleton: false,
+      },
+    });
+  });
+
   app.get("/zk/proofs/:id", async (c) => {
     const proof = await container.pactZK.getProof(c.req.param("id"));
     return c.json(proof);
@@ -662,6 +685,29 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
 
   app.get("/zk/proofs/:id/receipts", async (c) => {
     return c.json(await container.pactZK.getVerificationReceipts(c.req.param("id")));
+  });
+
+  app.get("/zk/manifests", async (c) => {
+    const proofType = c.req.query("type");
+    if (proofType !== undefined && !isZKProofType(proofType)) {
+      throw new HTTPException(400, { message: "Invalid ZK proof type" });
+    }
+
+    return c.json(await container.pactZK.listArtifactManifests(proofType));
+  });
+
+  app.get("/zk/manifests/:type", async (c) => {
+    const proofType = c.req.param("type");
+    if (!isZKProofType(proofType)) {
+      throw new HTTPException(400, { message: "Invalid ZK proof type" });
+    }
+
+    const manifest = await container.pactZK.getArtifactManifest(proofType, c.req.query("version"));
+    if (!manifest) {
+      throw new HTTPException(404, { message: "ZK artifact manifest not found" });
+    }
+
+    return c.json(manifest);
   });
 
   app.get("/zk/circuits/:type", async (c) => {

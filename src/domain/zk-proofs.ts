@@ -5,8 +5,11 @@ export interface ZKProofBridgeMetadata {
   manifestId: string;
   manifestVersion: string;
   manifestIntegrity: string;
+  manifestSchemaVersion?: string;
+  runtimeVersion?: string;
   traceId: string;
   proofDigest: string;
+  publicInputsDigest?: string;
   adapterReceiptId?: string;
 }
 

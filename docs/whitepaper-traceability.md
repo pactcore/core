@@ -55,6 +55,7 @@ Compensation classes modeled:
 
 ## Appendix C Coverage
 
-- external prover/verifier bridge skeleton: implemented
-- artifact manifest version and integrity validation: implemented
+- production-facing prover/verifier bridge interfaces: implemented
+- artifact manifest versioning and integrity validation: implemented
+- deterministic local adapter + remote HTTP skeleton: implemented
 - verification receipt traceability for bridge-backed proofs: implemented

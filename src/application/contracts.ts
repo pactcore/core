@@ -25,6 +25,7 @@ import type {
   ExternalZKVerifyResponse,
   ZKArtifactDescriptor,
   ZKArtifactManifest,
+  ZKBridgeRuntimeInfo,
   ZKVerificationReceipt,
 } from "../domain/zk-bridge";
 import type { EscrowAccount } from "../blockchain/abstraction";
@@ -474,6 +475,7 @@ export interface ZKArtifactManifestRepository {
   save(manifest: ZKArtifactManifest): Promise<void>;
   getById(id: string): Promise<ZKArtifactManifest | undefined>;
   getByType(type: ZKProofType, manifestVersion?: string): Promise<ZKArtifactManifest | undefined>;
+  listByType(type?: ZKProofType): Promise<ZKArtifactManifest[]>;
 }
 
 export interface ZKVerificationReceiptRepository {
@@ -488,6 +490,21 @@ export interface ExternalZKProverAdapter extends HealthCheckableAdapter {
   prove(request: ExternalZKProveRequest): Promise<ExternalZKProveResponse>;
   verify(request: ExternalZKVerifyRequest): Promise<ExternalZKVerifyResponse>;
 }
+
+export interface ZKBridgeRuntimeProvider {
+  getBridgeRuntimeInfo(): Promise<ZKBridgeRuntimeInfo> | ZKBridgeRuntimeInfo;
+}
+
+export interface ZKArtifactManifestCatalog {
+  getArtifactManifest(type: ZKProofType, manifestVersion?: string): Promise<ZKArtifactManifest | undefined>;
+  listArtifactManifests(type?: ZKProofType): Promise<ZKArtifactManifest[]>;
+}
+
+export interface ZKProverBridge
+  extends ZKProver, HealthCheckableAdapter, ZKBridgeRuntimeProvider, ZKArtifactManifestCatalog {}
+
+export interface ZKVerifierBridge
+  extends TraceableZKVerifier, HealthCheckableAdapter, ZKBridgeRuntimeProvider, ZKArtifactManifestCatalog {}
 
 // ── PactData contracts ─────────────────────────────────────────
 
