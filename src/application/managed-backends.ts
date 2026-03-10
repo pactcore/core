@@ -75,6 +75,7 @@ export interface ManagedBackendProfileSummary {
   endpoint?: string;
   timeoutMs?: number;
   credentialType: ManagedBackendCredentialType;
+  requiredCredentialFields: string[];
   configuredCredentialFields: string[];
   metadata?: Record<string, string>;
 }
@@ -245,6 +246,10 @@ export function summarizeManagedBackendProfile(
     endpoint: profile.endpoint,
     timeoutMs: profile.timeoutMs,
     credentialType,
+    requiredCredentialFields: normalizeManagedBackendRequiredCredentialFields(
+      profile.credentialSchema?.fields,
+      credentialType,
+    ),
     configuredCredentialFields: normalizeManagedBackendConfiguredCredentialFields(
       profile.configuredCredentialFields,
       credentialType,
@@ -267,6 +272,33 @@ export function normalizeManagedBackendConfiguredCredentialFields(
   return [...new Set((fields ?? []).map((field) =>
     normalizeManagedBackendCredentialKey(field, credentialType)
   ))].sort((left, right) => left.localeCompare(right));
+}
+
+export function normalizeManagedBackendCredentialSchemaFields(
+  fields: ManagedBackendCredentialFieldSchema[] | undefined,
+  credentialType: ManagedBackendCredentialType,
+): ManagedBackendCredentialFieldSchema[] {
+  const normalizedFields = (fields ?? []).map((field) => ({
+    ...field,
+    key: normalizeManagedBackendCredentialKey(field.key, credentialType),
+  }));
+  const uniqueFieldKeys = new Set(normalizedFields.map((field) => field.key));
+
+  if (uniqueFieldKeys.size !== normalizedFields.length) {
+    throw new Error("managedBackend.credentialSchema.fields contains duplicate keys");
+  }
+
+  return normalizedFields;
+}
+
+export function normalizeManagedBackendRequiredCredentialFields(
+  fields: ManagedBackendCredentialFieldSchema[] | undefined,
+  credentialType: ManagedBackendCredentialType,
+): string[] {
+  return normalizeManagedBackendCredentialSchemaFields(fields, credentialType)
+    .filter((field) => field.required !== false)
+    .map((field) => field.key)
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function normalizeManagedBackendHealth(
@@ -324,6 +356,7 @@ function cloneManagedBackendProfileSummary(
 
   return {
     ...profile,
+    requiredCredentialFields: [...profile.requiredCredentialFields],
     configuredCredentialFields: [...profile.configuredCredentialFields],
     metadata: profile.metadata ? { ...profile.metadata } : undefined,
   };

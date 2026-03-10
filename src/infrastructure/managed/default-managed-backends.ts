@@ -10,7 +10,7 @@ import type {
 } from "../../application/managed-backends";
 import {
   normalizeManagedBackendConfiguredCredentialFields,
-  normalizeManagedBackendCredentialKey,
+  normalizeManagedBackendCredentialSchemaFields,
 } from "../../application/managed-backends";
 import { RemoteHttpManagedObservabilityAdapterSkeleton } from "./remote-http-managed-observability-adapter-skeleton";
 import { RemoteHttpManagedQueueAdapterSkeleton } from "./remote-http-managed-queue-adapter-skeleton";
@@ -190,11 +190,10 @@ function createManagedBackendProfile(
   defaults: Pick<ManagedBackendProfileLoaderOptions, "defaultBackendId" | "defaultProviderId" | "defaultDisplayName">,
 ): ManagedBackendProfile {
   const credentialType = input.credentialSchema?.type ?? input.credentialType ?? "none";
-  const normalizedCredentialFields = (input.credentialSchema?.fields ?? DEFAULT_CREDENTIAL_FIELDS[credentialType])
-    .map((field) => ({
-      ...field,
-      key: normalizeManagedBackendCredentialKey(field.key, credentialType),
-    }));
+  const normalizedCredentialFields = normalizeManagedBackendCredentialSchemaFields(
+    input.credentialSchema?.fields ?? DEFAULT_CREDENTIAL_FIELDS[credentialType],
+    credentialType,
+  );
 
   return {
     backendId: normalizeRequiredString(input.backendId ?? defaults.defaultBackendId, "managedBackend.backendId"),

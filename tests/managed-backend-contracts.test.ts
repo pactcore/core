@@ -94,7 +94,7 @@ describe("managed backend contracts", () => {
         capability: string;
         mode: string;
         state: string;
-        profile?: { endpoint?: string; credentialType?: string };
+        profile?: { endpoint?: string; credentialType?: string; requiredCredentialFields?: string[] };
         features?: Record<string, boolean | number | string>;
       }>;
     };
@@ -217,7 +217,7 @@ describe("managed backend contracts", () => {
         capability: string;
         mode: string;
         state: string;
-        profile?: { endpoint?: string; credentialType?: string };
+        profile?: { endpoint?: string; credentialType?: string; requiredCredentialFields?: string[] };
         features?: Record<string, boolean | number | string>;
       }>;
     };
@@ -228,7 +228,7 @@ describe("managed backend contracts", () => {
         capability: string;
         mode: string;
         state: string;
-        profile?: { endpoint?: string; credentialType?: string };
+        profile?: { endpoint?: string; credentialType?: string; requiredCredentialFields?: string[] };
         features?: Record<string, boolean | number | string>;
       }>;
     };
@@ -711,6 +711,45 @@ describe("managed backend contracts", () => {
     });
   });
 
+  it("rejects duplicate aliased credential schema fields in direct managed backend adapters", () => {
+    expect(() => new RemoteHttpManagedObservabilityAdapterSkeleton({
+      domain: "dev",
+      profile: {
+        backendId: "managed-dev-observability",
+        providerId: "managed-dev",
+        endpoint: "https://managed.example.com/dev/observability",
+        credentialSchema: {
+          type: "service_account",
+          fields: [
+            { key: "token", required: true, secret: true },
+            { key: "access_token", required: true, secret: true },
+          ],
+        },
+        configuredCredentialFields: ["token"],
+      },
+    })).toThrow("managedBackend.credentialSchema.fields contains duplicate keys");
+  });
+
+  it("rejects duplicate aliased credential schema fields in env-backed managed backend profiles", () => {
+    expect(() => createContainer(undefined, {
+      env: {
+        PACT_DEV_OBSERVABILITY_BACKEND_PROFILE_JSON: JSON.stringify({
+          backendId: "managed-dev-observability",
+          providerId: "managed-dev",
+          endpoint: "https://managed.example.com/dev/observability",
+          credentialType: "service_account",
+          credentialSchema: {
+            fields: [
+              { key: "token", required: true, secret: true },
+              { key: "access_token", required: true, secret: true },
+            ],
+          },
+          configuredCredentialFields: ["token"],
+        }),
+      },
+    })).toThrow("managedBackend.credentialSchema.fields contains duplicate keys");
+  });
+
   it("reports degraded remote managed backend health when credentials are incomplete", async () => {
     const dataStore = new RemoteHttpManagedStoreAdapterSkeleton<string>({
       domain: "data",
@@ -891,7 +930,12 @@ describe("managed backend contracts", () => {
         capability: string;
         mode: string;
         state: string;
-        profile?: { providerId?: string; credentialType?: string; configuredCredentialFields?: string[] };
+        profile?: {
+          providerId?: string;
+          credentialType?: string;
+          requiredCredentialFields?: string[];
+          configuredCredentialFields?: string[];
+        };
       }>;
     };
     const computeResponse = await app.request("/compute/backends/health");
@@ -900,7 +944,12 @@ describe("managed backend contracts", () => {
         capability: string;
         mode: string;
         state: string;
-        profile?: { providerId?: string; credentialType?: string; configuredCredentialFields?: string[] };
+        profile?: {
+          providerId?: string;
+          credentialType?: string;
+          requiredCredentialFields?: string[];
+          configuredCredentialFields?: string[];
+        };
       }>;
     };
     const devResponse = await app.request("/dev/backends/health");
@@ -909,7 +958,12 @@ describe("managed backend contracts", () => {
         capability: string;
         mode: string;
         state: string;
-        profile?: { providerId?: string; credentialType?: string; configuredCredentialFields?: string[] };
+        profile?: {
+          providerId?: string;
+          credentialType?: string;
+          requiredCredentialFields?: string[];
+          configuredCredentialFields?: string[];
+        };
       }>;
     };
 
@@ -979,7 +1033,7 @@ describe("managed backend contracts", () => {
       backends: Array<{
         capability: string;
         state: string;
-        profile?: { configuredCredentialFields?: string[] };
+        profile?: { requiredCredentialFields?: string[]; configuredCredentialFields?: string[] };
       }>;
     };
     const devResponse = await app.request("/dev/backends/health");
@@ -988,7 +1042,7 @@ describe("managed backend contracts", () => {
       backends: Array<{
         capability: string;
         state: string;
-        profile?: { configuredCredentialFields?: string[] };
+        profile?: { requiredCredentialFields?: string[]; configuredCredentialFields?: string[] };
       }>;
     };
 

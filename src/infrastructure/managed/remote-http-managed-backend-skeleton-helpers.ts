@@ -1,7 +1,8 @@
 import type { AdapterDurability, AdapterHealthState } from "../../application/adapter-runtime";
 import {
   normalizeManagedBackendConfiguredCredentialFields,
-  normalizeManagedBackendCredentialKey,
+  normalizeManagedBackendRequiredCredentialFields,
+  normalizeManagedBackendCredentialSchemaFields,
   summarizeManagedBackendProfile,
   type ManagedBackendCapability,
   type ManagedBackendDomain,
@@ -19,10 +20,7 @@ export function cloneManagedBackendProfile(profile: ManagedBackendProfile): Mana
     credentialSchema: profile.credentialSchema
       ? {
           ...profile.credentialSchema,
-          fields: profile.credentialSchema.fields.map((field) => ({
-            ...field,
-            key: normalizeManagedBackendCredentialKey(field.key, credentialType),
-          })),
+          fields: normalizeManagedBackendCredentialSchemaFields(profile.credentialSchema.fields, credentialType),
         }
       : undefined,
     configuredCredentialFields: normalizeManagedBackendConfiguredCredentialFields(
@@ -42,9 +40,10 @@ export function createRemoteManagedBackendHealth(input: {
   name?: string;
 }): ManagedBackendHealthReport {
   const credentialType = input.profile.credentialSchema?.type ?? "none";
-  const requiredFields = (input.profile.credentialSchema?.fields ?? [])
-    .filter((field) => field.required)
-    .map((field) => normalizeManagedBackendCredentialKey(field.key, credentialType));
+  const requiredFields = normalizeManagedBackendRequiredCredentialFields(
+    input.profile.credentialSchema?.fields,
+    credentialType,
+  );
   const configuredFields = new Set(
     normalizeManagedBackendConfiguredCredentialFields(input.profile.configuredCredentialFields, credentialType),
   );
