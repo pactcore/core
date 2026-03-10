@@ -1,4 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import {
+  normalizeManagedBackendConfiguredCredentialFields,
+  normalizeManagedBackendCredentialSchemaFields,
+  normalizeManagedBackendRequiredCredentialFields,
+} from "../src";
 import { createApp } from "../src/api/app";
 import { createContainer } from "../src/application/container";
 import { RemoteHttpManagedObservabilityAdapterSkeleton } from "../src/infrastructure/managed/remote-http-managed-observability-adapter-skeleton";
@@ -263,6 +268,33 @@ describe("managed backend contracts", () => {
     expect(devObservabilityHealth?.features?.bufferedMetrics).toBe(0);
     expect(devObservabilityHealth?.features?.bufferedTraces).toBe(0);
     expect(devObservabilityHealth?.features?.flushCount).toBe(1);
+  });
+
+  it("exports managed backend credential normalization helpers through the public API", () => {
+    expect(
+      normalizeManagedBackendConfiguredCredentialFields(["access_token", "token"], "bearer"),
+    ).toEqual(["token"]);
+    expect(
+      normalizeManagedBackendRequiredCredentialFields(
+        [
+          { key: "access_token", required: true, secret: true },
+          { key: "project_id", required: false },
+        ],
+        "service_account",
+      ),
+    ).toEqual(["accessToken"]);
+    expect(
+      normalizeManagedBackendCredentialSchemaFields(
+        [
+          { key: "access_token", required: true, secret: true },
+          { key: "project_id", required: false },
+        ],
+        "service_account",
+      ),
+    ).toEqual([
+      { key: "accessToken", required: true, secret: true },
+      { key: "projectId", required: false },
+    ]);
   });
 
   it("routes PactData publications through managed queue, store, and observability adapters", async () => {
