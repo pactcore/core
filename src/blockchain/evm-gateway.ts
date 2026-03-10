@@ -49,12 +49,14 @@ export interface EvmIdentitySBTContractClientConfig {
 export class EvmBlockchainGateway implements BlockchainGateway {
   private readonly rpcProvider: RpcProvider;
   private readonly signer: TransactionSigner;
+  private readonly contractAddresses: ContractAddresses;
   private readonly releaseTxIdsByTask = new Map<string, string>();
   private txNonce = 0;
 
   constructor(private readonly config: EvmBlockchainGatewayConfig) {
     this.rpcProvider = config.rpcProvider ?? new FetchRpcProvider({ rpcUrl: config.rpcUrl });
     this.signer = resolveTransactionSigner(config.signer, config.signerPrivateKey, "pact-network-signer");
+    this.contractAddresses = validateContractAddresses(config.contractAddresses);
   }
 
   async createEscrow(taskId: string, payerId: string, amountCents: number): Promise<EscrowAccount> {
@@ -68,7 +70,7 @@ export class EvmBlockchainGateway implements BlockchainGateway {
       BigInt(amountCents),
     ]);
 
-    await this.sendRawTransaction(this.config.contractAddresses.escrow, data);
+    await this.sendRawTransaction(this.contractAddresses.escrow, data);
 
     return {
       taskId,
@@ -90,7 +92,7 @@ export class EvmBlockchainGateway implements BlockchainGateway {
     ].join("");
     const data = `0x${selector.slice(2)}${payload}`;
 
-    const txId = await this.sendRawTransaction(this.config.contractAddresses.escrow, data);
+    const txId = await this.sendRawTransaction(this.contractAddresses.escrow, data);
     this.releaseTxIdsByTask.set(taskId, txId);
     return txId;
   }
@@ -99,7 +101,7 @@ export class EvmBlockchainGateway implements BlockchainGateway {
     const data = encodeFunction("getEscrow", ["uint256"], [this.taskIdToUint256(taskId)]);
     const callResult = await this.rpcProvider.request("eth_call", [
       {
-        to: normalizeLikeAddress(this.config.contractAddresses.escrow),
+        to: this.contractAddresses.escrow,
         data,
       },
       "latest",
@@ -167,6 +169,7 @@ export class EvmBlockchainGateway implements BlockchainGateway {
 export class EvmIdentitySBTContractClient implements IdentitySBTContractClient {
   private readonly rpcProvider: RpcProvider;
   private readonly signer: TransactionSigner;
+  private readonly contractAddress: string;
   private txNonce = 0;
 
   constructor(private readonly config: EvmIdentitySBTContractClientConfig) {
@@ -176,6 +179,7 @@ export class EvmIdentitySBTContractClient implements IdentitySBTContractClient {
       config.signerPrivateKey,
       "pact-network-identity-signer",
     );
+    this.contractAddress = normalizeContractAddress(config.contractAddress, "identitySBT");
   }
 
   async mint(
@@ -196,7 +200,7 @@ export class EvmIdentitySBTContractClient implements IdentitySBTContractClient {
     );
     const selector = functionSelectorFromSignature("mint(address,uint256,string,uint8)");
     const data = `0x${selector.slice(2)}${encoded.slice(10)}`;
-    await this.sendRawTransaction(this.config.contractAddress, data);
+    await this.sendRawTransaction(this.contractAddress, data);
     return identifierToUint256(participantId);
   }
 
@@ -207,14 +211,14 @@ export class EvmIdentitySBTContractClient implements IdentitySBTContractClient {
     ]);
     const selector = functionSelectorFromSignature("upgradeLevel(uint256,uint8)");
     const data = `0x${selector.slice(2)}${encoded.slice(10)}`;
-    return this.sendRawTransaction(this.config.contractAddress, data);
+    return this.sendRawTransaction(this.contractAddress, data);
   }
 
   async getIdentity(tokenId: bigint): Promise<OnchainIdentityRecord | undefined> {
     const data = encodeFunction("getIdentity", ["uint256"], [tokenId]);
     const callResult = await this.rpcProvider.request("eth_call", [
       {
-        to: normalizeLikeAddress(this.config.contractAddress),
+        to: this.contractAddress,
         data,
       },
       "latest",
@@ -259,6 +263,35 @@ export { MockRpcProvider };
 function findRecipientId(recipientIds: string[], token: string): string | undefined {
   const lowered = token.toLowerCase();
   return recipientIds.find((id) => id.toLowerCase().includes(lowered));
+}
+
+function validateContractAddresses(addresses: ContractAddresses): ContractAddresses {
+  const normalized: ContractAddresses = {
+    escrow: normalizeContractAddress(addresses.escrow, "escrow"),
+    identitySBT: normalizeContractAddress(addresses.identitySBT, "identitySBT"),
+    staking: normalizeContractAddress(addresses.staking, "staking"),
+    payRouter: normalizeContractAddress(addresses.payRouter, "payRouter"),
+  };
+  const uniqueAddresses = new Set(Object.values(normalized));
+  if (uniqueAddresses.size !== Object.keys(normalized).length) {
+    throw new Error("contractAddresses must contain unique contract addresses");
+  }
+  return normalized;
+}
+
+function normalizeContractAddress(value: string, label: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`contract address ${label} is required`);
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(normalized)) {
+    throw new Error(`contract address ${label} must be a 20-byte hex address`);
+  }
+  if (normalized === ZERO_ADDRESS) {
+    throw new Error(`contract address ${label} cannot be the zero address`);
+  }
+  return normalized;
 }
 
 function toSafeNumber(value: unknown): number {

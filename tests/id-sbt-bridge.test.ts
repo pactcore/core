@@ -120,6 +120,16 @@ function buildStats(
 }
 
 describe("Identity SBT bridge", () => {
+  it("rejects zero-address identity SBT deployments", () => {
+    expect(
+      () =>
+        new EvmIdentitySBTContractClient({
+          rpcUrl: "http://localhost:8545",
+          contractAddress: "0x0000000000000000000000000000000000000000",
+        }),
+    ).toThrow("contract address identitySBT cannot be the zero address");
+  });
+
   it("EvmIdentitySBTContractClient.mint sends mint calldata and returns token id", async () => {
     const { rpc, client } = createBridgeClient();
     const tokenId = await client.mint("worker-alpha", "worker-alpha", "worker", 0);

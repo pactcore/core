@@ -113,4 +113,30 @@ describe("Contract bridge", () => {
     });
     expect(call?.params[1]).toBe("latest");
   });
+
+  it("rejects zero-address contract deployments", () => {
+    expect(
+      () =>
+        new EvmBlockchainGateway({
+          rpcUrl: "http://localhost:8545",
+          contractAddresses: {
+            ...CONTRACT_ADDRESSES,
+            escrow: "0x0000000000000000000000000000000000000000",
+          },
+        }),
+    ).toThrow("contract address escrow cannot be the zero address");
+  });
+
+  it("rejects duplicate contract addresses", () => {
+    expect(
+      () =>
+        new EvmBlockchainGateway({
+          rpcUrl: "http://localhost:8545",
+          contractAddresses: {
+            ...CONTRACT_ADDRESSES,
+            payRouter: CONTRACT_ADDRESSES.escrow,
+          },
+        }),
+    ).toThrow("contractAddresses must contain unique contract addresses");
+  });
 });
