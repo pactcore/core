@@ -69,15 +69,42 @@ describe("Contract bridge", () => {
     const rawTx = sendCalls[0]?.params[0];
     expect(typeof rawTx).toBe("string");
 
-    const payload = JSON.parse(Buffer.from(String(rawTx).slice(2), "hex").toString("utf8")) as {
-      to: string;
-      data: string;
-    };
+    const payload = decodeSignedPayload(rawTx);
 
     expect(payload.to).toBe(CONTRACT_ADDRESSES.escrow);
+    expect(payload.nonce).toBe(0);
     expect(payload.data).toBe(
       encodeFunction("createEscrow", ["uint256", "address", "uint256"], [7n, payer, 5_000n]),
     );
+  });
+
+  it("syncs bridge nonces from the provider pending count and preserves a local floor", async () => {
+    const mock = new MockRpcProvider();
+    let nonceResponse = "0x7";
+    mock.setMethodResponse("eth_getTransactionCount", () => nonceResponse);
+    mock.setMethodResponse("eth_sendRawTransaction", "0xtx-synced");
+
+    const gateway = new EvmBlockchainGateway({
+      rpcUrl: "http://localhost:8545",
+      contractAddresses: CONTRACT_ADDRESSES,
+      rpcProvider: mock,
+    });
+
+    await gateway.createEscrow("8", "payer-8", 900);
+    nonceResponse = "0x2";
+    await gateway.releaseEscrow("8", {
+      worker: 700,
+      treasury: 200,
+    });
+
+    const sendCalls = mock.getCalls("eth_sendRawTransaction");
+    expect(sendCalls).toHaveLength(2);
+    expect(decodeSignedPayload(sendCalls[0]?.params[0]).nonce).toBe(7);
+    expect(decodeSignedPayload(sendCalls[1]?.params[0]).nonce).toBe(8);
+
+    const nonceCalls = mock.getCalls("eth_getTransactionCount");
+    expect(nonceCalls).toHaveLength(2);
+    expect(nonceCalls[0]?.params[1]).toBe("pending");
   });
 
   it("EvmBlockchainGateway.getEscrow decodes eth_call results", async () => {
@@ -140,3 +167,16 @@ describe("Contract bridge", () => {
     ).toThrow("contractAddresses must contain unique contract addresses");
   });
 });
+
+function decodeSignedPayload(rawTx: unknown): { from: string; to: string; data: string; nonce: number } {
+  if (typeof rawTx !== "string") {
+    throw new Error(`Expected raw transaction as hex string, received ${typeof rawTx}`);
+  }
+
+  return JSON.parse(Buffer.from(rawTx.slice(2), "hex").toString("utf8")) as {
+    from: string;
+    to: string;
+    data: string;
+    nonce: number;
+  };
+}

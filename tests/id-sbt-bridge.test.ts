@@ -84,13 +84,14 @@ function createBridgeClient(): {
   return { rpc, client };
 }
 
-function decodeRawTxPayload(rawTx: unknown): { to: string; data: string } {
+function decodeRawTxPayload(rawTx: unknown): { to: string; data: string; nonce: number } {
   if (typeof rawTx !== "string") {
     throw new Error(`Expected raw transaction as hex string, received ${typeof rawTx}`);
   }
   return JSON.parse(Buffer.from(rawTx.slice(2), "hex").toString("utf8")) as {
     to: string;
     data: string;
+    nonce: number;
   };
 }
 
@@ -141,6 +142,7 @@ describe("Identity SBT bridge", () => {
 
     const payload = decodeRawTxPayload(sendCalls[0]?.params[0]);
     expect(payload.to).toBe(IDENTITY_SBT_ADDRESS);
+    expect(payload.nonce).toBe(0);
     expect(payload.data.slice(0, 10)).toBe(
       functionSelectorFromSignature("mint(address,uint256,string,uint8)"),
     );
@@ -246,6 +248,21 @@ describe("Identity SBT bridge", () => {
       `0x${upgradePayload.data.slice(10)}`,
     );
     expect(level).toBe(1n);
+  });
+
+  it("syncs identity bridge nonces from provider pending state", async () => {
+    const { rpc, client } = createBridgeClient();
+    let nonceResponse = "0x9";
+    rpc.setMethodResponse("eth_getTransactionCount", () => nonceResponse);
+
+    await client.mint("worker-sync", "worker-sync", "worker", 0);
+    nonceResponse = "0x1";
+    await client.upgradeLevel(7n, 1);
+
+    const sendCalls = rpc.getCalls("eth_sendRawTransaction");
+    expect(sendCalls).toHaveLength(2);
+    expect(decodeRawTxPayload(sendCalls[0]?.params[0]).nonce).toBe(9);
+    expect(decodeRawTxPayload(sendCalls[1]?.params[0]).nonce).toBe(10);
   });
 
   it("PactID.syncOnchainIdentity mints for existing participant when token is missing", async () => {

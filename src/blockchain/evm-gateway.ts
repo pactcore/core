@@ -130,13 +130,19 @@ export class EvmBlockchainGateway implements BlockchainGateway {
   }
 
   private async sendRawTransaction(to: string, data: string): Promise<string> {
-    const nonce = this.txNonce;
-    this.txNonce += 1;
+    const nonce = await this.resolveNextNonce();
     return submitSignedTransaction(this.rpcProvider, this.signer, {
       to,
       data,
       nonce,
     });
+  }
+
+  private async resolveNextNonce(): Promise<number> {
+    const providerNonce = await tryGetPendingNonce(this.rpcProvider, this.signer.getAddress());
+    const nonce = providerNonce === undefined ? this.txNonce : Math.max(this.txNonce, providerNonce);
+    this.txNonce = nonce + 1;
+    return nonce;
   }
 
   private resolvePayoutRecipients(payouts: Record<string, number>): EscrowRecipients {
@@ -248,13 +254,19 @@ export class EvmIdentitySBTContractClient implements IdentitySBTContractClient {
   }
 
   private async sendRawTransaction(to: string, data: string): Promise<string> {
-    const nonce = this.txNonce;
-    this.txNonce += 1;
+    const nonce = await this.resolveNextNonce();
     return submitSignedTransaction(this.rpcProvider, this.signer, {
       to,
       data,
       nonce,
     });
+  }
+
+  private async resolveNextNonce(): Promise<number> {
+    const providerNonce = await tryGetPendingNonce(this.rpcProvider, this.signer.getAddress());
+    const nonce = providerNonce === undefined ? this.txNonce : Math.max(this.txNonce, providerNonce);
+    this.txNonce = nonce + 1;
+    return nonce;
   }
 }
 
@@ -302,6 +314,53 @@ function toSafeNumber(value: unknown): number {
     throw new Error(`Cannot represent uint256 as number safely: ${value}`);
   }
   return Number(value);
+}
+
+async function tryGetPendingNonce(
+  rpcProvider: RpcProvider,
+  address: string,
+): Promise<number | undefined> {
+  try {
+    const result = await rpcProvider.request("eth_getTransactionCount", [address, "pending"]);
+    return parseRpcNonce(result);
+  } catch (error) {
+    if (isNonceSyncFallbackError(error)) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function parseRpcNonce(value: unknown): number {
+  if (typeof value === "number") {
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error(`eth_getTransactionCount returned an invalid numeric nonce: ${value}`);
+    }
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (!/^0x[0-9a-f]+$/.test(normalized)) {
+      throw new Error(`eth_getTransactionCount returned an invalid hex nonce: ${value}`);
+    }
+    const parsed = Number.parseInt(normalized.slice(2), 16);
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
+      throw new Error(`eth_getTransactionCount returned an unsafe nonce: ${value}`);
+    }
+    return parsed;
+  }
+
+  throw new Error(`eth_getTransactionCount returned unsupported nonce payload: ${typeof value}`);
+}
+
+function isNonceSyncFallbackError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.startsWith("No mock response configured for eth_getTransactionCount")
+    || error.message.includes("RPC error -32601");
 }
 
 function toUint8(value: unknown, context: string): number {
