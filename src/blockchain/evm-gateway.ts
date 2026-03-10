@@ -13,6 +13,7 @@ import {
 } from "./abi-encoder";
 import type { ContractAddresses } from "./contract-abis";
 import { MockRpcProvider, type RpcProvider } from "../infrastructure/blockchain/mock-rpc-provider";
+import { FetchRpcProvider } from "../infrastructure/blockchain/fetch-rpc-provider";
 import {
   normalizeLikeAddress,
   resolveTransactionSigner,
@@ -52,7 +53,7 @@ export class EvmBlockchainGateway implements BlockchainGateway {
   private txNonce = 0;
 
   constructor(private readonly config: EvmBlockchainGatewayConfig) {
-    this.rpcProvider = config.rpcProvider ?? new FetchRpcProvider(config.rpcUrl);
+    this.rpcProvider = config.rpcProvider ?? new FetchRpcProvider({ rpcUrl: config.rpcUrl });
     this.signer = resolveTransactionSigner(config.signer, config.signerPrivateKey, "pact-network-signer");
   }
 
@@ -169,7 +170,7 @@ export class EvmIdentitySBTContractClient implements IdentitySBTContractClient {
   private txNonce = 0;
 
   constructor(private readonly config: EvmIdentitySBTContractClientConfig) {
-    this.rpcProvider = config.rpcProvider ?? new FetchRpcProvider(config.rpcUrl);
+    this.rpcProvider = config.rpcProvider ?? new FetchRpcProvider({ rpcUrl: config.rpcUrl });
     this.signer = resolveTransactionSigner(
       config.signer,
       config.signerPrivateKey,
@@ -254,46 +255,6 @@ export class EvmIdentitySBTContractClient implements IdentitySBTContractClient {
 }
 
 export { MockRpcProvider };
-
-class FetchRpcProvider implements RpcProvider {
-  private nextId = 1;
-
-  constructor(private readonly rpcUrl: string, private readonly fetchImpl: typeof fetch = fetch) {}
-
-  async request(method: string, params: unknown[] = []): Promise<unknown> {
-    const response = await this.fetchImpl(this.rpcUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: this.nextId,
-        method,
-        params,
-      }),
-    });
-    this.nextId += 1;
-
-    if (!response.ok) {
-      throw new Error(`RPC request failed with HTTP ${response.status}`);
-    }
-
-    const payload = (await response.json()) as {
-      result?: unknown;
-      error?: {
-        code?: number;
-        message?: string;
-      };
-    };
-
-    if (payload.error) {
-      throw new Error(`RPC error ${payload.error.code ?? "unknown"}: ${payload.error.message ?? "unknown"}`);
-    }
-
-    return payload.result;
-  }
-}
 
 function findRecipientId(recipientIds: string[], token: string): string | undefined {
   const lowered = token.toLowerCase();

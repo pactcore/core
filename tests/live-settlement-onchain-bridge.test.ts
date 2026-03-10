@@ -91,7 +91,7 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
   });
 
   it("executes settlement records through live-facing llm/cloud/api transports", async () => {
-    const transport = new RecordingTransport((request) => ({
+    const transport = new RecordingTransport((request): SettlementConnectorTransportResponse => ({
       status: 200,
       body: {
         externalReference: `${request.connector}-ref-${transport.requests.length + 1}`,
@@ -213,7 +213,9 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
       now: () => now,
       confirmationDepth: 1,
       finalityDepth: 2,
-      hooks: [(event) => events.push(event)],
+      hooks: [(event) => {
+        events.push(event);
+      }],
     });
 
     runtime.trackTransaction({
@@ -316,9 +318,17 @@ class RecordingSigner implements TransactionSigner {
 }
 
 class CapturingFinalityProvider implements OnchainFinalityProvider {
-  readonly tracked: Array<{ txId: string; operation: string; proposalId?: string }> = [];
+  readonly tracked: Array<{
+    txId: string;
+    operation: OnchainTransactionRecord["operation"];
+    proposalId?: string;
+  }> = [];
 
-  trackTransaction(input: { txId: string; operation: string; proposalId?: string }): OnchainTransactionRecord {
+  trackTransaction(input: {
+    txId: string;
+    operation: OnchainTransactionRecord["operation"];
+    proposalId?: string;
+  }): OnchainTransactionRecord {
     this.tracked.push({ ...input });
     return buildTransactionRecord(input.txId, input.operation);
   }

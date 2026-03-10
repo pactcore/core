@@ -1,4 +1,4 @@
-import type { EventJournal } from "./contracts";
+import type { EventJournal, ZKProver, ZKVerifier } from "./contracts";
 import { recommendedValidationConfig, type ValidationConfig } from "../domain/validation-pipeline";
 import { TaskStateMachine } from "../domain/task-state-machine";
 import { EvmIdentitySBTContractClient } from "../blockchain/evm-gateway";
@@ -31,9 +31,7 @@ import { InMemoryReputationEventRepository } from "../infrastructure/reputation/
 import { InMemoryScheduler } from "../infrastructure/scheduler/in-memory-scheduler";
 import { InMemoryTaskManager } from "../infrastructure/task-manager/in-memory-task-manager";
 import { InMemoryValidatorConsensus } from "../infrastructure/validator-consensus/in-memory-validator-consensus";
-import { InMemoryApiQuotaAllocationConnector } from "../infrastructure/settlement/in-memory-api-quota-allocation-connector";
-import { InMemoryCloudCreditBillingConnector } from "../infrastructure/settlement/in-memory-cloud-credit-billing-connector";
-import { InMemoryLlmTokenMeteringConnector } from "../infrastructure/settlement/in-memory-llm-token-metering-connector";
+import { createDefaultSettlementConnectorsFromEnv } from "../infrastructure/settlement/default-settlement-connectors";
 import { InMemoryComputeProviderRegistry } from "../infrastructure/compute/in-memory-compute-provider-registry";
 import { InMemoryResourceMeter } from "../infrastructure/compute/in-memory-resource-meter";
 import { InMemoryComputeExecutionAdapter } from "../infrastructure/compute/in-memory-compute-execution-adapter";
@@ -47,7 +45,12 @@ import { InMemoryParticipantStatsRepository } from "../infrastructure/identity/i
 import { InMemoryZKProver } from "../infrastructure/zk/in-memory-zk-prover";
 import { InMemoryZKVerifier } from "../infrastructure/zk/in-memory-zk-verifier";
 import { InMemoryZKProofRepository } from "../infrastructure/zk/in-memory-zk-proof-repository";
+import { InMemoryZKArtifactManifestRepository } from "../infrastructure/zk/in-memory-zk-artifact-manifest-repository";
 import { InMemoryZKVerificationReceiptRepository } from "../infrastructure/zk/in-memory-zk-verification-receipt-repository";
+import { DeterministicLocalZKProverAdapter } from "../infrastructure/zk/deterministic-local-zk-prover-adapter";
+import { RemoteHttpZKProverAdapterSkeleton } from "../infrastructure/zk/remote-http-zk-prover-adapter-skeleton";
+import { ProductionZKProverBridge } from "../infrastructure/zk/production-zk-prover-bridge";
+import { createDefaultZKArtifactManifests } from "../infrastructure/zk/default-zk-artifact-manifest-factory";
 import { InMemoryProvenanceGraph } from "../infrastructure/data/in-memory-provenance-graph";
 import { InMemoryIntegrityProofRepository } from "../infrastructure/data/in-memory-integrity-proof-repository";
 import { InMemoryDataAccessPolicyRepository } from "../infrastructure/data/in-memory-data-access-policy-repository";
@@ -83,6 +86,8 @@ import { PactZK } from "./modules/pact-zk";
 import { PactReputation } from "./modules/pact-reputation";
 import { PactAnalytics } from "./modules/pact-analytics";
 import { PactEcosystem } from "./modules/pact-ecosystem";
+import type { SettlementConnectorTransport } from "./settlement-connectors";
+import { OnchainFinalityRuntime, type OnchainFinalityProvider } from "../domain/onchain-finality";
 
 export interface PactContainer {
   pactAntiSpam: PactAntiSpam;
@@ -124,14 +129,55 @@ export interface PactContainerEnvironment {
   PACT_CHALLENGE_STAKE_ASSET_ID?: string;
   PACT_CHALLENGE_STAKE_UNIT?: string;
   PACT_ZK_SECRET?: string;
+  PACT_ZK_PROVER_MODE?: string;
+  PACT_ZK_RUNTIME_VERSION?: string;
+  PACT_ZK_MANIFEST_VERSION?: string;
+  PACT_ZK_ADAPTER_NAME?: string;
+  PACT_ZK_REMOTE_ENDPOINT?: string;
+  PACT_ZK_REMOTE_PROVIDER_ID?: string;
+  PACT_ZK_REMOTE_API_KEY?: string;
   PACT_EVM_RPC_URL?: string;
   PACT_IDENTITY_SBT_ADDRESS?: string;
   PACT_EVM_PRIVATE_KEY?: string;
+  PACT_ONCHAIN_CONFIRMATION_DEPTH?: string;
+  PACT_ONCHAIN_FINALITY_DEPTH?: string;
+  PACT_LLM_SETTLEMENT_PROFILE_JSON?: string;
+  PACT_LLM_SETTLEMENT_PROFILE_ID?: string;
+  PACT_LLM_SETTLEMENT_PROVIDER_ID?: string;
+  PACT_LLM_SETTLEMENT_DISPLAY_NAME?: string;
+  PACT_LLM_SETTLEMENT_ENDPOINT?: string;
+  PACT_LLM_SETTLEMENT_TIMEOUT_MS?: string;
+  PACT_LLM_SETTLEMENT_CREDENTIAL_TYPE?: string;
+  PACT_LLM_SETTLEMENT_CREDENTIAL_FIELDS_JSON?: string;
+  PACT_CLOUD_SETTLEMENT_PROFILE_JSON?: string;
+  PACT_CLOUD_SETTLEMENT_PROFILE_ID?: string;
+  PACT_CLOUD_SETTLEMENT_PROVIDER_ID?: string;
+  PACT_CLOUD_SETTLEMENT_DISPLAY_NAME?: string;
+  PACT_CLOUD_SETTLEMENT_ENDPOINT?: string;
+  PACT_CLOUD_SETTLEMENT_TIMEOUT_MS?: string;
+  PACT_CLOUD_SETTLEMENT_CREDENTIAL_TYPE?: string;
+  PACT_CLOUD_SETTLEMENT_CREDENTIAL_FIELDS_JSON?: string;
+  PACT_API_SETTLEMENT_PROFILE_JSON?: string;
+  PACT_API_SETTLEMENT_PROFILE_ID?: string;
+  PACT_API_SETTLEMENT_PROVIDER_ID?: string;
+  PACT_API_SETTLEMENT_DISPLAY_NAME?: string;
+  PACT_API_SETTLEMENT_ENDPOINT?: string;
+  PACT_API_SETTLEMENT_TIMEOUT_MS?: string;
+  PACT_API_SETTLEMENT_CREDENTIAL_TYPE?: string;
+  PACT_API_SETTLEMENT_CREDENTIAL_FIELDS_JSON?: string;
+  [key: `PACT_LLM_SETTLEMENT_CREDENTIAL_${string}`]: string | undefined;
+  [key: `PACT_LLM_SETTLEMENT_METADATA_${string}`]: string | undefined;
+  [key: `PACT_CLOUD_SETTLEMENT_CREDENTIAL_${string}`]: string | undefined;
+  [key: `PACT_CLOUD_SETTLEMENT_METADATA_${string}`]: string | undefined;
+  [key: `PACT_API_SETTLEMENT_CREDENTIAL_${string}`]: string | undefined;
+  [key: `PACT_API_SETTLEMENT_METADATA_${string}`]: string | undefined;
 }
 
 export interface CreateContainerOptions {
   env?: PactContainerEnvironment;
   managedBackends?: ManagedBackendInventory;
+  settlementTransport?: SettlementConnectorTransport;
+  onchainFinalityProvider?: OnchainFinalityProvider;
 }
 
 export function createContainer(
@@ -208,10 +254,41 @@ export function createContainer(
   const credentialRepository = new InMemoryCredentialRepository();
   const participantStatsRepository = new InMemoryParticipantStatsRepository();
   const zkSecret = env.PACT_ZK_SECRET ?? "pact-zk-test-secret";
-  const zkProver = new InMemoryZKProver(zkSecret);
-  const zkVerifier = new InMemoryZKVerifier(zkSecret);
+  const zkRuntimeVersion = env.PACT_ZK_RUNTIME_VERSION ?? "0.2.0";
+  const zkManifestVersion = env.PACT_ZK_MANIFEST_VERSION ?? "1.0.0";
+  const zkAdapterName = env.PACT_ZK_ADAPTER_NAME;
+  const zkProverMode = env.PACT_ZK_PROVER_MODE ?? "memory";
+  let zkProver: ZKProver = new InMemoryZKProver(zkSecret);
+  let zkVerifier: ZKVerifier = new InMemoryZKVerifier(zkSecret);
   const zkProofRepository = new InMemoryZKProofRepository();
   const zkVerificationReceiptRepository = new InMemoryZKVerificationReceiptRepository();
+  if (zkProverMode === "bridge-local" || zkProverMode === "bridge-remote") {
+    const manifestRepository = new InMemoryZKArtifactManifestRepository();
+    for (const manifest of createDefaultZKArtifactManifests(undefined, {
+      manifestVersion: zkManifestVersion,
+      runtimeVersion: zkRuntimeVersion,
+    })) {
+      void manifestRepository.save(manifest);
+    }
+
+    const adapter = zkProverMode === "bridge-remote"
+      ? new RemoteHttpZKProverAdapterSkeleton({
+          endpoint: env.PACT_ZK_REMOTE_ENDPOINT,
+          adapterName: zkAdapterName,
+          providerId: env.PACT_ZK_REMOTE_PROVIDER_ID,
+          configuredCredentialFields: env.PACT_ZK_REMOTE_API_KEY ? ["apiKey"] : [],
+        })
+      : new DeterministicLocalZKProverAdapter({
+          adapterName: zkAdapterName,
+        });
+
+    const bridge = new ProductionZKProverBridge(adapter, manifestRepository, {
+      runtimeVersion: zkRuntimeVersion,
+      adapterName: zkAdapterName,
+    });
+    zkProver = bridge;
+    zkVerifier = bridge;
+  }
   const provenanceGraph = new InMemoryProvenanceGraph();
   const integrityProofRepository = new InMemoryIntegrityProofRepository();
   const dataAccessPolicyRepository = new InMemoryDataAccessPolicyRepository();
@@ -282,7 +359,14 @@ export function createContainer(
   const pactDev = new PactDev(policyRegistry, templateRepository, {
     runtimeVersion: "0.2.0",
   }, options.managedBackends?.dev);
-  const pactOnchain = new PactOnchain();
+  const pactOnchain = new PactOnchain(
+    undefined,
+    undefined,
+    options.onchainFinalityProvider ?? new OnchainFinalityRuntime({
+      confirmationDepth: parseIntegerEnv(env.PACT_ONCHAIN_CONFIRMATION_DEPTH, 2),
+      finalityDepth: parseIntegerEnv(env.PACT_ONCHAIN_FINALITY_DEPTH, 6),
+    }),
+  );
   const pactPluginMarketplace = new PactPluginMarketplace(
     pluginPackageRepository,
     pluginListingRepository,
@@ -319,11 +403,9 @@ export function createContainer(
   const pactEconomics = new PactEconomics({
     settlementRecordRepository,
     eventBus,
-    settlementConnectors: {
-      llmTokenMetering: new InMemoryLlmTokenMeteringConnector(),
-      cloudCreditBilling: new InMemoryCloudCreditBillingConnector(),
-      apiQuotaAllocation: new InMemoryApiQuotaAllocationConnector(),
-    },
+    settlementConnectors: createDefaultSettlementConnectorsFromEnv(env as Record<string, string | undefined>, {
+      transport: options.settlementTransport,
+    }),
   });
   const pactReconciliation = new PactReconciliation({ pactEconomics });
   const pactAnalytics = new PactAnalytics({

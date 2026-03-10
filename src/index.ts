@@ -32,7 +32,18 @@ export {
   type TransactionSigner,
   type UnsignedSerializedTransaction,
 } from "./blockchain/providers";
+export {
+  LiveOnchainIndexer,
+  RpcOnchainIndexerDataSource,
+  type LiveOnchainIndexerOptions,
+  type OnchainBlockHeader,
+  type OnchainIndexerDataSource,
+  type OnchainIndexerSyncEvent,
+  type OnchainIndexerSyncHook,
+  type OnchainTransactionReceipt,
+} from "./blockchain/onchain-indexer";
 export { MockRpcProvider as InfrastructureMockRpcProvider } from "./infrastructure/blockchain/mock-rpc-provider";
+export { FetchRpcProvider } from "./infrastructure/blockchain/fetch-rpc-provider";
 export {
   MockEvmGovernanceBridge,
   type CreateGovernanceProposalInput,
@@ -260,6 +271,7 @@ export type {
   ZKArtifactRole,
   ZKArtifactDescriptor,
   ZKArtifactManifest,
+  ZKBridgeRuntimeInfo,
   ExternalZKProveRequest,
   ExternalZKProveResponse,
   ExternalZKVerifyRequest,
@@ -451,6 +463,11 @@ export type {
   ManagedBackendProfileSummary,
   ManagedBackendHealthReport,
   ManagedBackendHealthSummary,
+  ManagedBackendRuntimeReport,
+  ManagedBackendRuntimeSummary,
+  ManagedBackendReconciliationRequest,
+  ManagedBackendReconciliationReport,
+  ManagedBackendReconciliationSummary,
   ManagedQueueMessage,
   ManagedQueueReceipt,
   ManagedQueueDepth,
@@ -479,7 +496,11 @@ export {
 } from "./application/adapter-runtime";
 export {
   aggregateManagedBackendHealth,
+  aggregateManagedBackendReconciliation,
+  aggregateManagedBackendRuntime,
+  reconcileManagedBackend,
   resolveManagedBackendHealth,
+  resolveManagedBackendRuntime,
   summarizeManagedBackendProfile,
 } from "./application/managed-backends";
 export type {
@@ -503,6 +524,20 @@ export { InMemoryApiQuotaAllocationConnector } from "./infrastructure/settlement
 export { ExternalLlmTokenMeteringConnector } from "./infrastructure/settlement/external-llm-token-metering-connector";
 export { ExternalCloudCreditBillingConnector } from "./infrastructure/settlement/external-cloud-credit-billing-connector";
 export { ExternalApiQuotaAllocationConnector } from "./infrastructure/settlement/external-api-quota-allocation-connector";
+export { FetchSettlementConnectorTransport } from "./infrastructure/settlement/fetch-settlement-connector-transport";
+export {
+  createDefaultSettlementConnectors,
+  createDefaultSettlementConnectorsFromEnv,
+} from "./infrastructure/settlement/default-settlement-connectors";
+export {
+  createSettlementConnectorCredentialSchema,
+  createSettlementConnectorProviderProfile,
+  loadSettlementConnectorProviderProfileFromEnv,
+  loadSettlementConnectorProviderProfilesFromEnv,
+  type LoadSettlementConnectorProviderProfileOptions,
+  type LoadedSettlementConnectorProviderProfiles,
+  type SettlementConnectorProfileInput,
+} from "./infrastructure/settlement/provider-profile-loader";
 export { InMemoryDurableSettlementRecordRepository } from "./infrastructure/repositories/in-memory-durable-settlement-record-repository";
 export { FileBackedDurableSettlementRecordRepository } from "./infrastructure/repositories/file-backed-durable-settlement-record-repository";
 export { FileBackedMissionRepository } from "./infrastructure/repositories/file-backed-mission-repository";
@@ -524,6 +559,8 @@ export { InMemoryComputeExecutionCheckpointStore } from "./infrastructure/comput
 export { DockerExecutionAdapter } from "./infrastructure/compute/docker-execution-adapter";
 export { PricingEngine } from "./infrastructure/compute/pricing-engine";
 export { RemoteHttpManagedQueueAdapterSkeleton } from "./infrastructure/managed/remote-http-managed-queue-adapter-skeleton";
+export { RemoteHttpManagedStoreAdapterSkeleton } from "./infrastructure/managed/remote-http-managed-store-adapter-skeleton";
+export { RemoteHttpManagedObservabilityAdapterSkeleton } from "./infrastructure/managed/remote-http-managed-observability-adapter-skeleton";
 export {
   calculateJobCost,
   findBestTier,
@@ -542,6 +579,9 @@ export { InMemoryZKVerifier } from "./infrastructure/zk/in-memory-zk-verifier";
 export { InMemoryZKProofRepository } from "./infrastructure/zk/in-memory-zk-proof-repository";
 export { InMemoryZKArtifactManifestRepository } from "./infrastructure/zk/in-memory-zk-artifact-manifest-repository";
 export { InMemoryZKVerificationReceiptRepository } from "./infrastructure/zk/in-memory-zk-verification-receipt-repository";
+export { DeterministicLocalZKProverAdapter } from "./infrastructure/zk/deterministic-local-zk-prover-adapter";
+export { RemoteHttpZKProverAdapterSkeleton } from "./infrastructure/zk/remote-http-zk-prover-adapter-skeleton";
+export { createDefaultZKArtifactManifest, createDefaultZKArtifactManifests } from "./infrastructure/zk/default-zk-artifact-manifest-factory";
 export { MockExternalZKProverAdapter } from "./infrastructure/zk/mock-external-zk-prover-adapter";
 export { ProductionZKProverBridge } from "./infrastructure/zk/production-zk-prover-bridge";
 
@@ -666,6 +706,10 @@ export type { FormalPropertyVerificationResult } from "./application/modules/pac
 export type {
   ExternalZKProverAdapter,
   TraceableZKVerifier,
+  ZKArtifactManifestCatalog,
   ZKArtifactManifestRepository,
+  ZKBridgeRuntimeProvider,
+  ZKProverBridge,
   ZKVerificationReceiptRepository,
+  ZKVerifierBridge,
 } from "./application/contracts";
