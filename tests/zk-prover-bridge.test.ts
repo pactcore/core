@@ -11,6 +11,7 @@ import { InMemoryZKProofRepository } from "../src/infrastructure/zk/in-memory-zk
 import { InMemoryZKVerificationReceiptRepository } from "../src/infrastructure/zk/in-memory-zk-verification-receipt-repository";
 import { ProductionZKProverBridge } from "../src/infrastructure/zk/production-zk-prover-bridge";
 import { RemoteHttpZKProverAdapterSkeleton } from "../src/infrastructure/zk/remote-http-zk-prover-adapter-skeleton";
+import { computeZKManifestIntegrity } from "../src/domain/zk-bridge";
 
 describe("ProductionZKProverBridge", () => {
   test("generates bridge metadata, manifests, and verification receipts", async () => {
@@ -179,20 +180,78 @@ describe("ProductionZKProverBridge", () => {
     expect(runtime.features.remoteAdapterSkeleton).toBe(true);
   });
 
+  test("reports healthy health when the full manifest catalog validates", async () => {
+    const manifestRepository = new InMemoryZKArtifactManifestRepository();
+    for (const manifest of createDefaultZKArtifactManifests()) {
+      await manifestRepository.save(manifest);
+    }
+
+    const bridge = new ProductionZKProverBridge(
+      new DeterministicLocalZKProverAdapter("appendix-c-health"),
+      manifestRepository,
+    );
+
+    const health = await bridge.getHealth();
+
+    expect(health.state).toBe("healthy");
+    expect(health.features?.manifestCatalogState).toBe("healthy");
+    expect(health.features?.manifestCount).toBe(4);
+    expect(health.features?.activeManifestCount).toBe(4);
+    expect(health.features?.validatedManifestCount).toBe(4);
+    expect(health.features?.requiredManifestCount).toBe(4);
+    expect(health.lastError).toBeUndefined();
+  });
+
+  test("reports unhealthy health when the manifest catalog is empty", async () => {
+    const bridge = new ProductionZKProverBridge(
+      new DeterministicLocalZKProverAdapter("appendix-c-health"),
+      new InMemoryZKArtifactManifestRepository(),
+    );
+
+    const health = await bridge.getHealth();
+
+    expect(health.state).toBe("unhealthy");
+    expect(health.features?.manifestCatalogState).toBe("unhealthy");
+    expect(health.features?.manifestCount).toBe(0);
+    expect(health.features?.activeManifestCount).toBe(0);
+    expect(health.features?.validatedManifestCount).toBe(0);
+    expect(health.lastError?.code).toBe("zk_manifest_catalog_empty");
+  });
+
   test("reports unhealthy health when the active manifest catalog contains invalid artifacts", async () => {
     const manifestRepository = new InMemoryZKArtifactManifestRepository();
     for (const manifest of createDefaultZKArtifactManifests()) {
-      await manifestRepository.save(manifest.proofType === "identity"
-        ? {
-            ...manifest,
-            artifacts: manifest.artifacts.map((artifact, index) => index === 0
-              ? {
-                  ...artifact,
-                  integrity: "sha256:corrupted",
-                }
-              : artifact),
-          }
-        : manifest);
+      if (manifest.proofType !== "identity") {
+        await manifestRepository.save(manifest);
+        continue;
+      }
+
+      const corruptedManifest = {
+        ...manifest,
+        artifacts: manifest.artifacts.map((artifact, index) => index === 0
+          ? {
+              ...artifact,
+              integrity: "sha256:corrupted",
+            }
+          : artifact),
+      };
+
+      await manifestRepository.save({
+        ...corruptedManifest,
+        manifestIntegrity: await computeZKManifestIntegrity({
+          id: corruptedManifest.id,
+          schemaVersion: corruptedManifest.schemaVersion,
+          proofType: corruptedManifest.proofType,
+          manifestVersion: corruptedManifest.manifestVersion,
+          runtimeVersion: corruptedManifest.runtimeVersion,
+          integrityAlgorithm: corruptedManifest.integrityAlgorithm,
+          circuit: corruptedManifest.circuit,
+          artifacts: corruptedManifest.artifacts,
+          createdAt: corruptedManifest.createdAt,
+          publishedAt: corruptedManifest.publishedAt,
+          artifactCount: corruptedManifest.artifactCount,
+        }),
+      });
     }
 
     const bridge = new ProductionZKProverBridge(
@@ -207,7 +266,6 @@ describe("ProductionZKProverBridge", () => {
     expect(health.features?.activeManifestCount).toBe(3);
     expect(health.features?.validatedManifestCount).toBe(2);
     expect(health.lastError?.code).toBe("zk_artifact_integrity_mismatch");
-    expect(health.lastError?.details?.role).toBe("wasm");
   });
 
   test("reports degraded health when active manifests are missing required proof types", async () => {

@@ -135,7 +135,14 @@ function parseOptionalStringRecord(
 
 function loadPrefixedRecord(env: EnvLike, prefix: string): Record<string, string> {
   const entries = Object.entries(env)
-    .filter(([key, value]) => key.startsWith(prefix) && normalizeOptionalString(value) !== undefined)
+    .filter(([key, value]) => {
+      if (!key.startsWith(prefix) || normalizeOptionalString(value) === undefined) {
+        return false;
+      }
+
+      const suffix = key.slice(prefix.length);
+      return suffix !== "TYPE" && suffix !== "FIELDS_JSON" && suffix !== "JSON";
+    })
     .map(([key, value]) => [toCamelCase(key.slice(prefix.length)), normalizeRequiredString(value, key)]);
 
   return Object.fromEntries(entries);

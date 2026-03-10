@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/api/app";
 import { createContainer } from "../src/application/container";
 import { PactZK } from "../src/application/modules/pact-zk";
-import { createDefaultZKArtifactManifest } from "../src/infrastructure/zk/default-zk-artifact-manifest-factory";
+import { createDefaultZKArtifactManifests } from "../src/infrastructure/zk/default-zk-artifact-manifest-factory";
 import { DeterministicLocalZKProverAdapter } from "../src/infrastructure/zk/deterministic-local-zk-prover-adapter";
 import { InMemoryZKArtifactManifestRepository } from "../src/infrastructure/zk/in-memory-zk-artifact-manifest-repository";
 import { InMemoryZKProofRepository } from "../src/infrastructure/zk/in-memory-zk-proof-repository";
@@ -170,8 +170,9 @@ describe("zk prover bridge API", () => {
 
 async function createBridgeFixture() {
   const manifestRepository = new InMemoryZKArtifactManifestRepository();
-  await manifestRepository.save(createDefaultZKArtifactManifest("location"));
-  await manifestRepository.save(createDefaultZKArtifactManifest("completion"));
+  for (const manifest of createDefaultZKArtifactManifests()) {
+    await manifestRepository.save(manifest);
+  }
 
   const proofRepository = new InMemoryZKProofRepository();
   const receiptRepository = new InMemoryZKVerificationReceiptRepository();

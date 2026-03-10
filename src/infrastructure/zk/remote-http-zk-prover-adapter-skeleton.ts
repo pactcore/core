@@ -100,7 +100,7 @@ export class RemoteHttpZKProverAdapterSkeleton implements ExternalZKProverAdapte
 function buildConfigurationError(input: {
   hasEndpoint: boolean;
   missingFields: string[];
-}) {
+}): AdapterHealthReport["lastError"] {
   if (input.hasEndpoint && input.missingFields.length === 0) {
     return undefined;
   }
@@ -117,6 +117,10 @@ function buildConfigurationError(input: {
   }
 
   if (input.hasEndpoint && input.missingFields.length > 0) {
+    const details: Record<string, string> = {
+      missingFields: input.missingFields.join(","),
+    };
+
     return {
       adapter: "zk",
       operation: "configure_remote_zk_prover",
@@ -124,11 +128,14 @@ function buildConfigurationError(input: {
       message: `Missing credential fields: ${input.missingFields.join(", ")}`,
       retryable: false,
       occurredAt: Date.now(),
-      details: {
-        missingFields: input.missingFields.join(","),
-      },
+      details,
     };
   }
+
+  const details: Record<string, string> = {
+    missingFields: input.missingFields.join(","),
+    missingEndpoint: "true",
+  };
 
   return {
     adapter: "zk",
@@ -137,9 +144,6 @@ function buildConfigurationError(input: {
     message: `Remote ZK prover endpoint is required and credential fields are missing: ${input.missingFields.join(", ")}`,
     retryable: false,
     occurredAt: Date.now(),
-    details: {
-      missingFields: input.missingFields.join(","),
-      missingEndpoint: "true",
-    },
+    details,
   };
 }

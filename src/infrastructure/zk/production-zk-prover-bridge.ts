@@ -193,6 +193,7 @@ export class ProductionZKProverBridge implements ZKProverBridge, ZKVerifierBridg
       durable: adapterHealth?.durable ?? true,
       durability: adapterHealth?.durability ?? this.adapter.durability ?? "remote",
       features: {
+        ...(adapterHealth?.features ?? {}),
         externalProver: true,
         artifactManifestChecks: true,
         verificationReceipts: true,

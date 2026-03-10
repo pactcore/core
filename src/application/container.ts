@@ -285,7 +285,7 @@ export function createContainer(
     const adapter = zkProverMode === "bridge-remote"
       ? new RemoteHttpZKProverAdapterSkeleton({
           adapterName: zkAdapterName,
-          ...loadRemoteZKProverAdapterOptionsFromEnv(env),
+          ...loadRemoteZKProverAdapterOptionsFromEnv(env as Record<string, string | undefined>),
         })
       : new DeterministicLocalZKProverAdapter({
           adapterName: zkAdapterName,
