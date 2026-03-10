@@ -145,9 +145,11 @@ describe("adapter health routes", () => {
       env: {
         PACT_ZK_PROVER_MODE: "bridge-remote",
         PACT_ZK_ADAPTER_NAME: "bridge-remote-health",
-        PACT_ZK_REMOTE_ENDPOINT: "https://zk.example.test/prover",
-        PACT_ZK_REMOTE_PROVIDER_ID: "appendix-c-provider",
-        PACT_ZK_REMOTE_CREDENTIAL_TYPE: "oauth2",
+        PACT_ZK_REMOTE_PROFILE_JSON: JSON.stringify({
+          endpoint: "https://zk.example.test/prover",
+          providerId: "appendix-c-provider",
+          credentialType: "oauth2",
+        }),
         PACT_ZK_REMOTE_CREDENTIAL_ACCESS_TOKEN: "secret-token",
       },
     });

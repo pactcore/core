@@ -96,48 +96,20 @@ function loadManagedBackendProfileFromEnv(
 ): ManagedBackendProfile | undefined {
   const jsonKey = `${options.envPrefix}_PROFILE_JSON`;
   const jsonValue = normalizeOptionalString(env[jsonKey]);
+  const envProfile = loadManagedBackendProfileInputFromEnv(env, options.envPrefix);
+
   if (jsonValue) {
-    return createManagedBackendProfile(parseProfileJson(jsonValue, jsonKey), options);
+    return createManagedBackendProfile(
+      mergeManagedBackendProfileInputs(parseProfileJson(jsonValue, jsonKey), envProfile.input),
+      options,
+    );
   }
 
-  const endpoint = normalizeOptionalString(env[`${options.envPrefix}_ENDPOINT`]);
-  const providerId = normalizeOptionalString(env[`${options.envPrefix}_PROVIDER_ID`]);
-  const backendId = normalizeOptionalString(env[`${options.envPrefix}_BACKEND_ID`]);
-  const displayName = normalizeOptionalString(env[`${options.envPrefix}_DISPLAY_NAME`]);
-  const timeoutMs = parseOptionalInteger(env[`${options.envPrefix}_TIMEOUT_MS`], `${options.envPrefix}_TIMEOUT_MS`);
-  const credentialType = parseCredentialType(
-    normalizeOptionalString(env[`${options.envPrefix}_CREDENTIAL_TYPE`]) ?? "none",
-    `${options.envPrefix}_CREDENTIAL_TYPE`,
-  );
-  const credentials = loadPrefixedRecord(env, `${options.envPrefix}_CREDENTIAL_`);
-  const metadata = loadPrefixedRecord(env, `${options.envPrefix}_METADATA_`);
-
-  if (!endpoint && !providerId && !backendId && Object.keys(credentials).length === 0 && Object.keys(metadata).length === 0) {
+  if (!envProfile.hasExplicitValues) {
     return undefined;
   }
 
-  const fieldSchemaJson = normalizeOptionalString(env[`${options.envPrefix}_CREDENTIAL_FIELDS_JSON`]);
-  const credentialFields = fieldSchemaJson
-    ? parseCredentialFields(fieldSchemaJson, `${options.envPrefix}_CREDENTIAL_FIELDS_JSON`)
-    : undefined;
-
-  return createManagedBackendProfile(
-    {
-      backendId,
-      providerId,
-      displayName,
-      endpoint,
-      timeoutMs,
-      credentialType,
-      credentialSchema: {
-        type: credentialType,
-        fields: credentialFields,
-      },
-      configuredCredentialFields: Object.keys(credentials),
-      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-    },
-    options,
-  );
+  return createManagedBackendProfile(envProfile.input, options);
 }
 
 function createManagedBackendCredentialSchema(
@@ -147,6 +119,62 @@ function createManagedBackendCredentialSchema(
   return {
     type: credentialType,
     fields: (fields ?? DEFAULT_CREDENTIAL_FIELDS[credentialType]).map((field) => ({ ...field })),
+  };
+}
+
+function loadManagedBackendProfileInputFromEnv(
+  env: EnvLike,
+  envPrefix: string,
+): {
+  hasExplicitValues: boolean;
+  input: Partial<ManagedBackendProfile> & {
+    credentialType?: ManagedBackendCredentialType;
+    credentialSchema?: Partial<ManagedBackendCredentialSchema>;
+  };
+} {
+  const endpoint = normalizeOptionalString(env[`${envPrefix}_ENDPOINT`]);
+  const providerId = normalizeOptionalString(env[`${envPrefix}_PROVIDER_ID`]);
+  const backendId = normalizeOptionalString(env[`${envPrefix}_BACKEND_ID`]);
+  const displayName = normalizeOptionalString(env[`${envPrefix}_DISPLAY_NAME`]);
+  const timeoutMs = parseOptionalInteger(env[`${envPrefix}_TIMEOUT_MS`], `${envPrefix}_TIMEOUT_MS`);
+  const credentialTypeValue = normalizeOptionalString(env[`${envPrefix}_CREDENTIAL_TYPE`]);
+  const credentialType = credentialTypeValue
+    ? parseCredentialType(credentialTypeValue, `${envPrefix}_CREDENTIAL_TYPE`)
+    : undefined;
+  const credentials = loadPrefixedRecord(env, `${envPrefix}_CREDENTIAL_`);
+  const metadata = loadPrefixedRecord(env, `${envPrefix}_METADATA_`);
+  const fieldSchemaJson = normalizeOptionalString(env[`${envPrefix}_CREDENTIAL_FIELDS_JSON`]);
+  const credentialFields = fieldSchemaJson
+    ? parseCredentialFields(fieldSchemaJson, `${envPrefix}_CREDENTIAL_FIELDS_JSON`)
+    : undefined;
+
+  return {
+    hasExplicitValues:
+      endpoint !== undefined ||
+      providerId !== undefined ||
+      backendId !== undefined ||
+      displayName !== undefined ||
+      timeoutMs !== undefined ||
+      credentialType !== undefined ||
+      credentialFields !== undefined ||
+      Object.keys(credentials).length > 0 ||
+      Object.keys(metadata).length > 0,
+    input: {
+      backendId,
+      providerId,
+      displayName,
+      endpoint,
+      timeoutMs,
+      credentialType,
+      credentialSchema: credentialType || credentialFields
+        ? {
+            type: credentialType,
+            fields: credentialFields,
+          }
+        : undefined,
+      configuredCredentialFields: Object.keys(credentials),
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+    },
   };
 }
 
@@ -167,6 +195,47 @@ function createManagedBackendProfile(
     credentialSchema: createManagedBackendCredentialSchema(credentialType, input.credentialSchema?.fields),
     configuredCredentialFields: [...(input.configuredCredentialFields ?? [])].sort((left, right) => left.localeCompare(right)),
     metadata: input.metadata ? { ...input.metadata } : undefined,
+  };
+}
+
+function mergeManagedBackendProfileInputs(
+  base: Partial<ManagedBackendProfile> & {
+    credentialType?: ManagedBackendCredentialType;
+    credentialSchema?: Partial<ManagedBackendCredentialSchema>;
+  },
+  overlay: Partial<ManagedBackendProfile> & {
+    credentialType?: ManagedBackendCredentialType;
+    credentialSchema?: Partial<ManagedBackendCredentialSchema>;
+  },
+): Partial<ManagedBackendProfile> & {
+  credentialType?: ManagedBackendCredentialType;
+  credentialSchema?: Partial<ManagedBackendCredentialSchema>;
+} {
+  const credentialType =
+    overlay.credentialSchema?.type ??
+    overlay.credentialType ??
+    base.credentialSchema?.type ??
+    base.credentialType;
+  const credentialFields = overlay.credentialSchema?.fields ?? base.credentialSchema?.fields;
+
+  return {
+    backendId: overlay.backendId ?? base.backendId,
+    providerId: overlay.providerId ?? base.providerId,
+    displayName: overlay.displayName ?? base.displayName,
+    endpoint: overlay.endpoint ?? base.endpoint,
+    timeoutMs: overlay.timeoutMs ?? base.timeoutMs,
+    credentialType,
+    credentialSchema: credentialType || credentialFields
+      ? {
+          type: credentialType,
+          fields: credentialFields,
+        }
+      : undefined,
+    configuredCredentialFields: [...new Set([
+      ...(base.configuredCredentialFields ?? []),
+      ...(overlay.configuredCredentialFields ?? []),
+    ])].sort((left, right) => left.localeCompare(right)),
+    metadata: mergeOptionalStringRecords(base.metadata, overlay.metadata),
   };
 }
 
@@ -270,6 +339,20 @@ function loadPrefixedRecord(env: EnvLike, prefix: string): Record<string, string
     .map(([key, value]) => [toCamelCase(key.slice(prefix.length)), normalizeRequiredString(value, key)]);
 
   return Object.fromEntries(entries);
+}
+
+function mergeOptionalStringRecords(
+  base: Record<string, string> | undefined,
+  overlay: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!base && !overlay) {
+    return undefined;
+  }
+
+  return {
+    ...(base ?? {}),
+    ...(overlay ?? {}),
+  };
 }
 
 function parseCredentialType(value: string, label: string): ManagedBackendCredentialType {

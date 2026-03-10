@@ -95,48 +95,20 @@ export function loadSettlementConnectorProviderProfileFromEnv(
 ): SettlementConnectorProviderProfile | undefined {
   const jsonKey = `${options.envPrefix}_PROFILE_JSON`;
   const jsonValue = normalizeOptionalString(env[jsonKey]);
+  const envProfile = loadEnvProfileInput(env, options.envPrefix);
+
   if (jsonValue) {
-    return createSettlementConnectorProviderProfile(parseProfileJson(jsonValue, jsonKey), options);
+    return createSettlementConnectorProviderProfile(
+      mergeSettlementConnectorProfileInputs(parseProfileJson(jsonValue, jsonKey), envProfile.input),
+      options,
+    );
   }
 
-  const endpoint = normalizeOptionalString(env[`${options.envPrefix}_ENDPOINT`]);
-  const providerId = normalizeOptionalString(env[`${options.envPrefix}_PROVIDER_ID`]);
-  const id = normalizeOptionalString(env[`${options.envPrefix}_PROFILE_ID`]);
-  const displayName = normalizeOptionalString(env[`${options.envPrefix}_DISPLAY_NAME`]);
-  const timeoutMs = parseOptionalInteger(env[`${options.envPrefix}_TIMEOUT_MS`], `${options.envPrefix}_TIMEOUT_MS`);
-  const credentialType = parseCredentialType(
-    normalizeOptionalString(env[`${options.envPrefix}_CREDENTIAL_TYPE`]) ?? "none",
-    `${options.envPrefix}_CREDENTIAL_TYPE`,
-  );
-  const credentials = loadPrefixedRecord(env, `${options.envPrefix}_CREDENTIAL_`);
-  const metadata = loadPrefixedRecord(env, `${options.envPrefix}_METADATA_`);
-
-  if (!endpoint && !providerId && !id && Object.keys(credentials).length === 0 && Object.keys(metadata).length === 0) {
+  if (!envProfile.hasExplicitValues) {
     return undefined;
   }
 
-  const schemaJson = normalizeOptionalString(env[`${options.envPrefix}_CREDENTIAL_FIELDS_JSON`]);
-  const credentialFields = schemaJson
-    ? parseCredentialFields(schemaJson, `${options.envPrefix}_CREDENTIAL_FIELDS_JSON`)
-    : undefined;
-
-  return createSettlementConnectorProviderProfile(
-    {
-      id,
-      providerId,
-      displayName,
-      endpoint,
-      timeoutMs,
-      credentialType,
-      credentialSchema: {
-        type: credentialType,
-        fields: credentialFields,
-      },
-      credentials,
-      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-    },
-    options,
-  );
+  return createSettlementConnectorProviderProfile(envProfile.input, options);
 }
 
 export function loadSettlementConnectorProviderProfilesFromEnv(
@@ -164,6 +136,88 @@ export function loadSettlementConnectorProviderProfilesFromEnv(
       defaultProviderId: "api",
       defaultDisplayName: "API settlement provider",
     }),
+  };
+}
+
+function loadEnvProfileInput(
+  env: EnvLike,
+  envPrefix: string,
+): {
+  hasExplicitValues: boolean;
+  input: SettlementConnectorProfileInput;
+} {
+  const endpoint = normalizeOptionalString(env[`${envPrefix}_ENDPOINT`]);
+  const providerId = normalizeOptionalString(env[`${envPrefix}_PROVIDER_ID`]);
+  const id = normalizeOptionalString(env[`${envPrefix}_PROFILE_ID`]);
+  const displayName = normalizeOptionalString(env[`${envPrefix}_DISPLAY_NAME`]);
+  const timeoutMs = parseOptionalInteger(env[`${envPrefix}_TIMEOUT_MS`], `${envPrefix}_TIMEOUT_MS`);
+  const credentialTypeValue = normalizeOptionalString(env[`${envPrefix}_CREDENTIAL_TYPE`]);
+  const credentialType = credentialTypeValue
+    ? parseCredentialType(credentialTypeValue, `${envPrefix}_CREDENTIAL_TYPE`)
+    : undefined;
+  const credentials = loadPrefixedRecord(env, `${envPrefix}_CREDENTIAL_`);
+  const metadata = loadPrefixedRecord(env, `${envPrefix}_METADATA_`);
+  const schemaJson = normalizeOptionalString(env[`${envPrefix}_CREDENTIAL_FIELDS_JSON`]);
+  const credentialFields = schemaJson
+    ? parseCredentialFields(schemaJson, `${envPrefix}_CREDENTIAL_FIELDS_JSON`)
+    : undefined;
+
+  return {
+    hasExplicitValues:
+      endpoint !== undefined ||
+      providerId !== undefined ||
+      id !== undefined ||
+      displayName !== undefined ||
+      timeoutMs !== undefined ||
+      credentialType !== undefined ||
+      credentialFields !== undefined ||
+      Object.keys(credentials).length > 0 ||
+      Object.keys(metadata).length > 0,
+    input: {
+      id,
+      providerId,
+      displayName,
+      endpoint,
+      timeoutMs,
+      credentialType,
+      credentialSchema: credentialType || credentialFields
+        ? {
+            type: credentialType,
+            fields: credentialFields,
+          }
+        : undefined,
+      credentials: Object.keys(credentials).length > 0 ? credentials : undefined,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+    },
+  };
+}
+
+function mergeSettlementConnectorProfileInputs(
+  base: SettlementConnectorProfileInput,
+  overlay: SettlementConnectorProfileInput,
+): SettlementConnectorProfileInput {
+  const credentialType =
+    overlay.credentialSchema?.type ??
+    overlay.credentialType ??
+    base.credentialSchema?.type ??
+    base.credentialType;
+  const credentialFields = overlay.credentialSchema?.fields ?? base.credentialSchema?.fields;
+
+  return {
+    id: overlay.id ?? base.id,
+    providerId: overlay.providerId ?? base.providerId,
+    displayName: overlay.displayName ?? base.displayName,
+    endpoint: overlay.endpoint ?? base.endpoint,
+    timeoutMs: overlay.timeoutMs ?? base.timeoutMs,
+    credentialType,
+    credentialSchema: credentialType || credentialFields
+      ? {
+          type: credentialType,
+          fields: credentialFields,
+        }
+      : undefined,
+    credentials: mergeOptionalStringRecords(base.credentials, overlay.credentials),
+    metadata: mergeOptionalStringRecords(base.metadata, overlay.metadata),
   };
 }
 
@@ -267,6 +321,20 @@ function loadPrefixedRecord(env: EnvLike, prefix: string): Record<string, string
     .map(([key, value]) => [toCamelCase(key.slice(prefix.length)), normalizeRequiredString(value, key)]);
 
   return Object.fromEntries(entries);
+}
+
+function mergeOptionalStringRecords(
+  base: Record<string, string> | undefined,
+  overlay: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!base && !overlay) {
+    return undefined;
+  }
+
+  return {
+    ...(base ?? {}),
+    ...(overlay ?? {}),
+  };
 }
 
 function parseCredentialType(

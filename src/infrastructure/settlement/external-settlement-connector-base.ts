@@ -82,7 +82,7 @@ export abstract class ExternalSettlementConnectorBase extends InMemorySettlement
         timeoutMs: this.getTimeoutMs(),
       };
       const response = await this.transport.send(request);
-      return this.mapTransportResponse(input, profile, response);
+      return this.mapTransportResponse(input, profile, bodyDigest, response);
     });
   }
 
@@ -157,15 +157,17 @@ export abstract class ExternalSettlementConnectorBase extends InMemorySettlement
     }
   }
 
-  private mapTransportResponse(
+  private async mapTransportResponse(
     input: SettlementConnectorRequest,
     profile: SettlementConnectorProviderProfile,
+    requestDigest: string,
     response: SettlementConnectorTransportResponse,
-  ): SettlementConnectorResult {
+  ): Promise<SettlementConnectorResult> {
     if (!Number.isInteger(response.status) || response.status < 200 || response.status >= 300) {
       throw new Error(`external settlement transport failed with HTTP ${response.status}`);
     }
 
+    const validatedIntegrityMetadata = await this.validateIntegrityHeaders(requestDigest, response);
     const body = isRecord(response.body) ? response.body : undefined;
     const metadata = {
       providerId: profile.providerId,
@@ -173,6 +175,7 @@ export abstract class ExternalSettlementConnectorBase extends InMemorySettlement
       connector: this.connector,
       operation: this.operation,
       httpStatus: String(response.status),
+      ...validatedIntegrityMetadata,
       ...normalizeMetadataRecord(body?.metadata),
     };
 
@@ -184,6 +187,38 @@ export abstract class ExternalSettlementConnectorBase extends InMemorySettlement
         `${this.connector}-${input.recordId}`,
       processedAt: normalizeOptionalFiniteNumber(body?.processedAt) ?? Date.now(),
       metadata,
+    };
+  }
+
+  private async validateIntegrityHeaders(
+    requestDigest: string,
+    response: SettlementConnectorTransportResponse,
+  ): Promise<Record<string, string> | undefined> {
+    const echoedRequestDigest = normalizeOptionalString(response.headers?.["x-pact-request-digest"]);
+    if (echoedRequestDigest && echoedRequestDigest !== requestDigest) {
+      throw new Error("external settlement transport request digest mismatch");
+    }
+
+    const responseDigest = normalizeOptionalString(response.headers?.["x-pact-response-digest"]);
+    if (!responseDigest) {
+      if (!echoedRequestDigest) {
+        return undefined;
+      }
+
+      return {
+        requestDigestValidated: "true",
+      };
+    }
+
+    const normalizedBody = normalizeDigestBody(response.body);
+    const computedResponseDigest = await createRequestDigest(normalizedBody);
+    if (responseDigest !== computedResponseDigest) {
+      throw new Error("external settlement transport response digest mismatch");
+    }
+
+    return {
+      requestDigestValidated: echoedRequestDigest ? "true" : "false",
+      responseDigestValidated: "true",
     };
   }
 }
@@ -248,6 +283,16 @@ function normalizeOptionalFiniteNumber(value: unknown): number | undefined {
 async function createRequestDigest(body: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
   return `sha256:${bufferToHex(digest)}`;
+}
+
+function normalizeDigestBody(body: unknown): string {
+  if (body === undefined) {
+    return "";
+  }
+  if (typeof body === "string") {
+    return body;
+  }
+  return JSON.stringify(body);
 }
 
 function bufferToHex(buffer: ArrayBuffer): string {

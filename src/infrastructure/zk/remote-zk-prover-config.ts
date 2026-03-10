@@ -33,30 +33,13 @@ export function loadRemoteZKProverAdapterOptionsFromEnv(
 ): RemoteHttpZKProverAdapterSkeletonOptions {
   const jsonKey = "PACT_ZK_REMOTE_PROFILE_JSON";
   const jsonValue = normalizeOptionalString(env[jsonKey]);
+  const envProfile = loadEnvRemoteZKProfileInput(env);
 
   if (jsonValue) {
-    return createOptionsFromProfile(parseProfileJson(jsonValue, jsonKey));
+    return createOptionsFromProfile(mergeRemoteZKProverProfileInputs(parseProfileJson(jsonValue, jsonKey), envProfile));
   }
 
-  const credentialType = parseCredentialType(
-    normalizeOptionalString(env.PACT_ZK_REMOTE_CREDENTIAL_TYPE) ?? "api_key",
-    "PACT_ZK_REMOTE_CREDENTIAL_TYPE",
-  );
-  const credentials = loadPrefixedRecord(env, "PACT_ZK_REMOTE_CREDENTIAL_");
-  const legacyApiKey = normalizeOptionalString(env.PACT_ZK_REMOTE_API_KEY);
-  if (legacyApiKey && !credentials.apiKey) {
-    credentials.apiKey = legacyApiKey;
-  }
-
-  return {
-    endpoint: normalizeOptionalString(env.PACT_ZK_REMOTE_ENDPOINT),
-    providerId: normalizeOptionalString(env.PACT_ZK_REMOTE_PROVIDER_ID),
-    configuredCredentialFields: Object.keys(credentials).sort((left, right) => left.localeCompare(right)),
-    requiredCredentialFields: parseFieldList(
-      env.PACT_ZK_REMOTE_REQUIRED_CREDENTIAL_FIELDS_JSON,
-      "PACT_ZK_REMOTE_REQUIRED_CREDENTIAL_FIELDS_JSON",
-    ) ?? DEFAULT_REQUIRED_CREDENTIAL_FIELDS[credentialType],
-  };
+  return createOptionsFromProfile(envProfile);
 }
 
 function createOptionsFromProfile(
@@ -73,6 +56,49 @@ function createOptionsFromProfile(
     providerId: normalizeOptionalString(profile.providerId),
     configuredCredentialFields: [...configuredCredentialFields].sort((left, right) => left.localeCompare(right)),
     requiredCredentialFields: [...(profile.requiredCredentialFields ?? DEFAULT_REQUIRED_CREDENTIAL_FIELDS[credentialType])],
+  };
+}
+
+function loadEnvRemoteZKProfileInput(env: EnvLike): RemoteZKProverProfileInput {
+  const credentialTypeValue = normalizeOptionalString(env.PACT_ZK_REMOTE_CREDENTIAL_TYPE);
+  const credentialType = credentialTypeValue
+    ? parseCredentialType(credentialTypeValue, "PACT_ZK_REMOTE_CREDENTIAL_TYPE")
+    : undefined;
+  const credentials = loadPrefixedRecord(env, "PACT_ZK_REMOTE_CREDENTIAL_");
+  const legacyApiKey = normalizeOptionalString(env.PACT_ZK_REMOTE_API_KEY);
+  if (legacyApiKey && !credentials.apiKey) {
+    credentials.apiKey = legacyApiKey;
+  }
+
+  return {
+    endpoint: normalizeOptionalString(env.PACT_ZK_REMOTE_ENDPOINT),
+    providerId: normalizeOptionalString(env.PACT_ZK_REMOTE_PROVIDER_ID),
+    credentialType,
+    requiredCredentialFields: parseFieldList(
+      env.PACT_ZK_REMOTE_REQUIRED_CREDENTIAL_FIELDS_JSON,
+      "PACT_ZK_REMOTE_REQUIRED_CREDENTIAL_FIELDS_JSON",
+    ),
+    credentials,
+  };
+}
+
+function mergeRemoteZKProverProfileInputs(
+  base: RemoteZKProverProfileInput,
+  overlay: RemoteZKProverProfileInput,
+): RemoteZKProverProfileInput {
+  return {
+    endpoint: overlay.endpoint ?? base.endpoint,
+    providerId: overlay.providerId ?? base.providerId,
+    credentialType: overlay.credentialType ?? base.credentialType,
+    configuredCredentialFields: [...new Set([
+      ...(base.configuredCredentialFields ?? []),
+      ...(overlay.configuredCredentialFields ?? []),
+    ])].sort((left, right) => left.localeCompare(right)),
+    requiredCredentialFields: overlay.requiredCredentialFields ?? base.requiredCredentialFields,
+    credentials: {
+      ...(base.credentials ?? {}),
+      ...(overlay.credentials ?? {}),
+    },
   };
 }
 

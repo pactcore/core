@@ -96,6 +96,52 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
     });
   });
 
+  it("validates optional settlement transport digest headers", async () => {
+    const transport = new RecordingTransport(async (request) => {
+      const body = {
+        externalReference: "ext-digest",
+        processedAt: 1_222,
+      };
+
+      return {
+        status: 200,
+        body,
+        headers: {
+          "x-pact-request-digest": request.headers["x-pact-request-digest"] ?? "",
+          "x-pact-response-digest": await createDigest(JSON.stringify(body)),
+        },
+      };
+    });
+    const connector = new ExternalLlmTokenMeteringConnector({
+      transport,
+      providerProfile: {
+        id: "openai-live-digest",
+        providerId: "openai",
+        endpoint: "https://billing.example.test/llm/credits",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        credentials: {
+          token: "digest-secret-token",
+        },
+      },
+      timeoutMs: 500,
+    });
+
+    const result = await connector.applyMeteringCredit(buildRequest({
+      settlementId: "settlement-digest-1",
+      recordId: "record-digest-1",
+      legId: "leg-digest-1",
+    }));
+
+    expect(result.externalReference).toBe("ext-digest");
+    expect(result.metadata).toMatchObject({
+      requestDigestValidated: "true",
+      responseDigestValidated: "true",
+    });
+  });
+
   it("accepts aliased provider credential keys for live settlement auth", async () => {
     const transport = new RecordingTransport(() => ({
       status: 200,
@@ -131,6 +177,43 @@ describe("Live settlement adapters and onchain bridge hardening", () => {
     expect(transport.requests).toHaveLength(1);
     expect(transport.requests[0]?.headers.authorization).toBe("Bearer alias-secret-token");
     expect(connector.getHealth().profile?.configuredCredentialFields).toEqual(["token"]);
+  });
+
+  it("rejects mismatched settlement transport digest headers", async () => {
+    const transport = new RecordingTransport(() => ({
+      status: 200,
+      body: {
+        externalReference: "ext-digest-bad",
+        processedAt: 1_333,
+      },
+      headers: {
+        "x-pact-request-digest": "sha256:wrong",
+      },
+    }));
+    const connector = new ExternalLlmTokenMeteringConnector({
+      transport,
+      providerProfile: {
+        id: "openai-live-digest-bad",
+        providerId: "openai",
+        endpoint: "https://billing.example.test/llm/credits",
+        credentialSchema: {
+          type: "bearer",
+          fields: [{ key: "token", required: true, secret: true }],
+        },
+        credentials: {
+          token: "digest-secret-token",
+        },
+      },
+      timeoutMs: 500,
+    });
+
+    await expect(
+      connector.applyMeteringCredit(buildRequest({
+        settlementId: "settlement-digest-2",
+        recordId: "record-digest-2",
+        legId: "leg-digest-2",
+      })),
+    ).rejects.toThrow("external settlement transport request digest mismatch");
   });
 
   it("executes settlement records through live-facing llm/cloud/api transports", async () => {
@@ -331,7 +414,7 @@ class RecordingTransport implements SettlementConnectorTransport {
   constructor(
     private readonly responseFactory: (
       request: SettlementConnectorTransportRequest,
-    ) => SettlementConnectorTransportResponse,
+    ) => SettlementConnectorTransportResponse | Promise<SettlementConnectorTransportResponse>,
   ) {}
 
   async send(request: SettlementConnectorTransportRequest): Promise<SettlementConnectorTransportResponse> {
@@ -339,7 +422,7 @@ class RecordingTransport implements SettlementConnectorTransport {
       ...request,
       headers: { ...request.headers },
     });
-    return this.responseFactory(request);
+    return await this.responseFactory(request);
   }
 }
 
@@ -479,4 +562,9 @@ async function registerManagedAssets(economics: PactEconomics): Promise<void> {
   await economics.registerAsset({ id: "llm-gpt5", kind: "llm_token", symbol: "TOKEN" });
   await economics.registerAsset({ id: "cloud-aws", kind: "cloud_credit", symbol: "AWSC" });
   await economics.registerAsset({ id: "search-api", kind: "api_quota", symbol: "QPS" });
+}
+
+async function createDigest(body: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+  return `sha256:${[...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
