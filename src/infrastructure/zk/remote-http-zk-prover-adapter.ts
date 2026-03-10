@@ -42,7 +42,7 @@ export class RemoteHttpZKProverAdapter implements ExternalZKProverAdapter {
   }
 
   async loadArtifact(artifact: ZKArtifactDescriptor): Promise<string | Uint8Array> {
-    const response = await this.sendRequest("load_artifact", artifact.uri, "GET");
+    const response = await this.sendRequest(artifact.uri, "load_artifact", "GET");
     if (typeof response === "string" || response instanceof Uint8Array) {
       return response;
     }
@@ -190,6 +190,7 @@ export class RemoteHttpZKProverAdapter implements ExternalZKProverAdapter {
         signal: controller.signal,
       });
       const parsedBody = await parseResponseBody(response);
+      this.validateIntegrityHeaders(operation, url, requestDigest, response, parsedBody.digest);
 
       if (!response.ok) {
         throw new AdapterOperationError(`Remote ZK ${operation} failed with HTTP ${response.status}`, {
@@ -204,7 +205,7 @@ export class RemoteHttpZKProverAdapter implements ExternalZKProverAdapter {
         });
       }
 
-      return parsedBody;
+      return parsedBody.value;
     } catch (error) {
       if (error instanceof AdapterOperationError) {
         throw error;
@@ -278,6 +279,40 @@ export class RemoteHttpZKProverAdapter implements ExternalZKProverAdapter {
         }
         return headers;
       }
+    }
+  }
+
+  private validateIntegrityHeaders(
+    operation: "prove" | "verify" | "load_artifact",
+    url: string,
+    requestDigest: string | undefined,
+    response: Response,
+    computedResponseDigest: string,
+  ): void {
+    const echoedRequestDigest = normalizeOptionalString(response.headers.get("x-pact-zk-request-digest"));
+    if (requestDigest && echoedRequestDigest && echoedRequestDigest !== `sha256:${requestDigest}`) {
+      throw new AdapterOperationError(`Remote ZK ${operation} request digest mismatch`, {
+        adapter: "zk",
+        operation,
+        code: "zk_remote_request_digest_mismatch",
+        retryable: false,
+        details: {
+          url,
+        },
+      });
+    }
+
+    const responseDigest = normalizeOptionalString(response.headers.get("x-pact-zk-response-digest"));
+    if (responseDigest && responseDigest !== computedResponseDigest) {
+      throw new AdapterOperationError(`Remote ZK ${operation} response digest mismatch`, {
+        adapter: "zk",
+        operation,
+        code: "zk_remote_response_digest_mismatch",
+        retryable: false,
+        details: {
+          url,
+        },
+      });
     }
   }
 }
@@ -367,17 +402,39 @@ function expectBoolean(value: unknown, label: string): boolean {
   return value;
 }
 
-async function parseResponseBody(response: Response): Promise<unknown> {
+async function parseResponseBody(
+  response: Response,
+): Promise<{ value: unknown; digest: string }> {
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const digest = await createDigest(bytes);
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const text = new TextDecoder().decode(bytes);
   if (contentType.includes("application/json")) {
-    return await response.json();
+    return {
+      value: text.length > 0 ? JSON.parse(text) : undefined,
+      digest,
+    };
   }
   if (contentType.includes("application/octet-stream") || contentType.includes("application/wasm")) {
-    return new Uint8Array(await response.arrayBuffer());
+    return {
+      value: bytes,
+      digest,
+    };
   }
 
-  const text = await response.text();
-  return text.length > 0 ? text : undefined;
+  return {
+    value: text.length > 0 ? text : undefined,
+    digest,
+  };
+}
+
+async function createDigest(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer);
+  return `sha256:${bufferToHex(digest)}`;
+}
+
+function bufferToHex(buffer: ArrayBuffer): string {
+  return [...new Uint8Array(buffer)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 function normalizeTimeout(value: number | undefined): number {
