@@ -49,6 +49,7 @@ import { InMemoryZKArtifactManifestRepository } from "../infrastructure/zk/in-me
 import { InMemoryZKVerificationReceiptRepository } from "../infrastructure/zk/in-memory-zk-verification-receipt-repository";
 import { DeterministicLocalZKProverAdapter } from "../infrastructure/zk/deterministic-local-zk-prover-adapter";
 import { RemoteHttpZKProverAdapterSkeleton } from "../infrastructure/zk/remote-http-zk-prover-adapter-skeleton";
+import { loadRemoteZKProverAdapterOptionsFromEnv } from "../infrastructure/zk/remote-zk-prover-config";
 import { ProductionZKProverBridge } from "../infrastructure/zk/production-zk-prover-bridge";
 import { createDefaultZKArtifactManifests } from "../infrastructure/zk/default-zk-artifact-manifest-factory";
 import { InMemoryProvenanceGraph } from "../infrastructure/data/in-memory-provenance-graph";
@@ -135,8 +136,12 @@ export interface PactContainerEnvironment {
   PACT_ZK_MANIFEST_VERSION?: string;
   PACT_ZK_ADAPTER_NAME?: string;
   PACT_ZK_REMOTE_ENDPOINT?: string;
+  PACT_ZK_REMOTE_PROFILE_JSON?: string;
   PACT_ZK_REMOTE_PROVIDER_ID?: string;
+  PACT_ZK_REMOTE_CREDENTIAL_TYPE?: string;
+  PACT_ZK_REMOTE_REQUIRED_CREDENTIAL_FIELDS_JSON?: string;
   PACT_ZK_REMOTE_API_KEY?: string;
+  [key: `PACT_ZK_REMOTE_CREDENTIAL_${string}`]: string | undefined;
   PACT_EVM_RPC_URL?: string;
   PACT_IDENTITY_SBT_ADDRESS?: string;
   PACT_EVM_PRIVATE_KEY?: string;
@@ -279,10 +284,8 @@ export function createContainer(
 
     const adapter = zkProverMode === "bridge-remote"
       ? new RemoteHttpZKProverAdapterSkeleton({
-          endpoint: env.PACT_ZK_REMOTE_ENDPOINT,
           adapterName: zkAdapterName,
-          providerId: env.PACT_ZK_REMOTE_PROVIDER_ID,
-          configuredCredentialFields: env.PACT_ZK_REMOTE_API_KEY ? ["apiKey"] : [],
+          ...loadRemoteZKProverAdapterOptionsFromEnv(env),
         })
       : new DeterministicLocalZKProverAdapter({
           adapterName: zkAdapterName,

@@ -66,7 +66,8 @@ export class RemoteHttpZKProverAdapterSkeleton implements ExternalZKProverAdapte
   getHealth(): AdapterHealthReport {
     const configuredFields = new Set(this.configuredCredentialFields);
     const missingFields = this.requiredCredentialFields.filter((field) => !configuredFields.has(field));
-    const state = this.endpoint && missingFields.length === 0 ? "healthy" : "degraded";
+    const hasEndpoint = Boolean(this.endpoint);
+    const state = hasEndpoint && missingFields.length === 0 ? "healthy" : "degraded";
 
     return {
       name: this.adapterName,
@@ -79,24 +80,66 @@ export class RemoteHttpZKProverAdapterSkeleton implements ExternalZKProverAdapte
         receiptTraceability: true,
         artifactIntegrity: true,
         remoteSkeleton: true,
-        endpointConfigured: Boolean(this.endpoint),
+        endpointConfigured: hasEndpoint,
+        providerConfigured: Boolean(this.providerId),
+        providerId: this.providerId ?? "unknown",
+        configuredCredentialFields: this.configuredCredentialFields.join(",") || "none",
+        requiredCredentialFields: this.requiredCredentialFields.join(",") || "none",
       },
       compatibility: {
         compatible: true,
       },
-      lastError: missingFields.length > 0
-        ? {
-            adapter: "zk",
-            operation: "configure_remote_zk_prover",
-            code: "zk_remote_credentials_incomplete",
-            message: `Missing credential fields: ${missingFields.join(", ")}`,
-            retryable: false,
-            occurredAt: Date.now(),
-            details: {
-              missingFields: missingFields.join(","),
-            },
-          }
-        : undefined,
+      lastError: buildConfigurationError({
+        hasEndpoint,
+        missingFields,
+      }),
     };
   }
+}
+
+function buildConfigurationError(input: {
+  hasEndpoint: boolean;
+  missingFields: string[];
+}) {
+  if (input.hasEndpoint && input.missingFields.length === 0) {
+    return undefined;
+  }
+
+  if (!input.hasEndpoint && input.missingFields.length === 0) {
+    return {
+      adapter: "zk",
+      operation: "configure_remote_zk_prover",
+      code: "zk_remote_endpoint_missing",
+      message: "Remote ZK prover endpoint is required",
+      retryable: false,
+      occurredAt: Date.now(),
+    };
+  }
+
+  if (input.hasEndpoint && input.missingFields.length > 0) {
+    return {
+      adapter: "zk",
+      operation: "configure_remote_zk_prover",
+      code: "zk_remote_credentials_incomplete",
+      message: `Missing credential fields: ${input.missingFields.join(", ")}`,
+      retryable: false,
+      occurredAt: Date.now(),
+      details: {
+        missingFields: input.missingFields.join(","),
+      },
+    };
+  }
+
+  return {
+    adapter: "zk",
+    operation: "configure_remote_zk_prover",
+    code: "zk_remote_configuration_incomplete",
+    message: `Remote ZK prover endpoint is required and credential fields are missing: ${input.missingFields.join(", ")}`,
+    retryable: false,
+    occurredAt: Date.now(),
+    details: {
+      missingFields: input.missingFields.join(","),
+      missingEndpoint: "true",
+    },
+  };
 }

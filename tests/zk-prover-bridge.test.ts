@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { AdapterOperationError } from "../src/application/adapter-runtime";
 import { PactZK } from "../src/application/modules/pact-zk";
-import { createDefaultZKArtifactManifest } from "../src/infrastructure/zk/default-zk-artifact-manifest-factory";
+import {
+  createDefaultZKArtifactManifest,
+  createDefaultZKArtifactManifests,
+} from "../src/infrastructure/zk/default-zk-artifact-manifest-factory";
 import { DeterministicLocalZKProverAdapter } from "../src/infrastructure/zk/deterministic-local-zk-prover-adapter";
 import { InMemoryZKArtifactManifestRepository } from "../src/infrastructure/zk/in-memory-zk-artifact-manifest-repository";
 import { InMemoryZKProofRepository } from "../src/infrastructure/zk/in-memory-zk-proof-repository";
@@ -174,5 +177,56 @@ describe("ProductionZKProverBridge", () => {
     expect(health.state).toBe("degraded");
     expect(health.features?.manifestCatalog).toBe(true);
     expect(runtime.features.remoteAdapterSkeleton).toBe(true);
+  });
+
+  test("reports unhealthy health when the active manifest catalog contains invalid artifacts", async () => {
+    const manifestRepository = new InMemoryZKArtifactManifestRepository();
+    for (const manifest of createDefaultZKArtifactManifests()) {
+      await manifestRepository.save(manifest.proofType === "identity"
+        ? {
+            ...manifest,
+            artifacts: manifest.artifacts.map((artifact, index) => index === 0
+              ? {
+                  ...artifact,
+                  integrity: "sha256:corrupted",
+                }
+              : artifact),
+          }
+        : manifest);
+    }
+
+    const bridge = new ProductionZKProverBridge(
+      new DeterministicLocalZKProverAdapter("appendix-c-health"),
+      manifestRepository,
+    );
+
+    const health = await bridge.getHealth();
+
+    expect(health.state).toBe("unhealthy");
+    expect(health.features?.manifestCatalogState).toBe("unhealthy");
+    expect(health.features?.activeManifestCount).toBe(3);
+    expect(health.features?.validatedManifestCount).toBe(2);
+    expect(health.lastError?.code).toBe("zk_artifact_integrity_mismatch");
+    expect(health.lastError?.details?.role).toBe("wasm");
+  });
+
+  test("reports degraded health when active manifests are missing required proof types", async () => {
+    const manifestRepository = new InMemoryZKArtifactManifestRepository();
+    await manifestRepository.save(createDefaultZKArtifactManifest("location"));
+    await manifestRepository.save(createDefaultZKArtifactManifest("completion"));
+
+    const bridge = new ProductionZKProverBridge(
+      new DeterministicLocalZKProverAdapter("appendix-c-health"),
+      manifestRepository,
+    );
+
+    const health = await bridge.getHealth();
+
+    expect(health.state).toBe("degraded");
+    expect(health.features?.manifestCatalogState).toBe("degraded");
+    expect(health.features?.activeManifestCount).toBe(2);
+    expect(health.features?.validatedManifestCount).toBe(2);
+    expect(health.lastError?.code).toBe("zk_manifest_missing");
+    expect(health.lastError?.details?.proofType).toBe("identity");
   });
 });

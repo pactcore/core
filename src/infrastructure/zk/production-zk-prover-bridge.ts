@@ -1,4 +1,4 @@
-import { AdapterOperationError, type AdapterHealthReport } from "../../application/adapter-runtime";
+import { AdapterOperationError, type AdapterHealthReport, type AdapterHealthState } from "../../application/adapter-runtime";
 import type {
   ExternalZKProverAdapter,
   ZKProverBridge,
@@ -16,7 +16,9 @@ import {
   type ZKVerificationReceipt,
 } from "../../domain/zk-bridge";
 import { getCircuitDefinition } from "../../domain/zk-circuits";
-import type { ZKProof, ZKProofRequest } from "../../domain/zk-proofs";
+import type { ZKProof, ZKProofRequest, ZKProofType } from "../../domain/zk-proofs";
+
+const REQUIRED_PROOF_TYPES: ZKProofType[] = ["location", "completion", "identity", "reputation"];
 
 export interface ProductionZKProverBridgeOptions {
   runtimeVersion?: string;
@@ -182,10 +184,11 @@ export class ProductionZKProverBridge implements ZKProverBridge, ZKVerifierBridg
   async getHealth(): Promise<AdapterHealthReport> {
     const adapterHealth = await this.adapter.getHealth?.();
     const runtime = await this.getBridgeRuntimeInfo();
+    const manifestHealth = await this.evaluateManifestCatalogHealth();
 
     return {
       name: "zk-prover-bridge",
-      state: adapterHealth?.state ?? "healthy",
+      state: this.mergeHealthState(adapterHealth?.state ?? "healthy", manifestHealth.state),
       checkedAt: Date.now(),
       durable: adapterHealth?.durable ?? true,
       durability: adapterHealth?.durability ?? this.adapter.durability ?? "remote",
@@ -196,13 +199,18 @@ export class ProductionZKProverBridge implements ZKProverBridge, ZKVerifierBridg
         manifestCatalog: true,
         bridgeAdapter: this.adapterName,
         manifestSchemas: runtime.manifestCatalog.schemaVersions.join(",") || "none",
+        manifestCatalogState: manifestHealth.state,
+        manifestCount: manifestHealth.manifestCount,
+        activeManifestCount: manifestHealth.activeManifestCount,
+        validatedManifestCount: manifestHealth.validatedManifestCount,
+        requiredManifestCount: REQUIRED_PROOF_TYPES.length,
       },
       compatibility: {
         compatible: true,
         currentVersion: this.runtimeVersion,
         supportedVersions: [this.runtimeVersion],
       },
-      lastError: adapterHealth?.lastError,
+      lastError: this.selectHealthError(adapterHealth, manifestHealth),
     };
   }
 
@@ -490,5 +498,128 @@ export class ProductionZKProverBridge implements ZKProverBridge, ZKVerifierBridg
       proof: proof.proof,
       createdAt: proof.createdAt,
     });
+  }
+
+  private async evaluateManifestCatalogHealth(): Promise<{
+    state: AdapterHealthState;
+    manifestCount: number;
+    activeManifestCount: number;
+    validatedManifestCount: number;
+    lastError?: AdapterHealthReport["lastError"];
+  }> {
+    const manifests = await this.manifestRepository.listByType();
+    let activeManifestCount = 0;
+    let validatedManifestCount = 0;
+
+    if (manifests.length === 0) {
+      const error = new AdapterOperationError("No ZK artifact manifests configured", {
+        adapter: "zk",
+        operation: "validate_artifact_manifest",
+        code: "zk_manifest_catalog_empty",
+        retryable: false,
+      });
+      return {
+        state: "unhealthy",
+        manifestCount: 0,
+        activeManifestCount: 0,
+        validatedManifestCount: 0,
+        lastError: error.toDescriptor(),
+      };
+    }
+
+    for (const proofType of REQUIRED_PROOF_TYPES) {
+      const manifest = await this.manifestRepository.getByType(proofType);
+      if (!manifest) {
+        const error = new AdapterOperationError(`Missing active ZK artifact manifest for ${proofType}`, {
+          adapter: "zk",
+          operation: "validate_artifact_manifest",
+          code: "zk_manifest_missing",
+          retryable: false,
+          details: {
+            proofType,
+          },
+        });
+        return {
+          state: "degraded",
+          manifestCount: manifests.length,
+          activeManifestCount,
+          validatedManifestCount,
+          lastError: error.toDescriptor(),
+        };
+      }
+
+      activeManifestCount += 1;
+
+      try {
+        await this.validateManifest(manifest, proofType, "prove");
+        validatedManifestCount += 1;
+      } catch (error) {
+        const normalized = error instanceof AdapterOperationError
+          ? error
+          : new AdapterOperationError(
+              error instanceof Error ? error.message : String(error),
+              {
+                adapter: "zk",
+                operation: "validate_artifact_manifest",
+                code: "zk_manifest_validation_failed",
+                retryable: false,
+                details: {
+                  proofType,
+                },
+                cause: error,
+              },
+            );
+
+        return {
+          state: "unhealthy",
+          manifestCount: manifests.length,
+          activeManifestCount,
+          validatedManifestCount,
+          lastError: normalized.toDescriptor(),
+        };
+      }
+    }
+
+    return {
+      state: "healthy",
+      manifestCount: manifests.length,
+      activeManifestCount,
+      validatedManifestCount,
+    };
+  }
+
+  private mergeHealthState(
+    left: AdapterHealthState,
+    right: AdapterHealthState,
+  ): AdapterHealthState {
+    const severity: Record<AdapterHealthState, number> = {
+      healthy: 0,
+      degraded: 1,
+      unhealthy: 2,
+    };
+
+    return severity[left] >= severity[right] ? left : right;
+  }
+
+  private selectHealthError(
+    adapterHealth: AdapterHealthReport | undefined,
+    manifestHealth: {
+      state: AdapterHealthState;
+      lastError?: AdapterHealthReport["lastError"];
+    },
+  ): AdapterHealthReport["lastError"] {
+    if (manifestHealth.state === "unhealthy" && manifestHealth.lastError) {
+      return manifestHealth.lastError;
+    }
+
+    if (adapterHealth?.state === "unhealthy" && adapterHealth.lastError) {
+      return adapterHealth.lastError;
+    }
+
+    if (manifestHealth.state === "degraded" && manifestHealth.lastError) {
+      return manifestHealth.lastError;
+    }
+
+    return adapterHealth?.lastError;
   }
 }

@@ -139,4 +139,64 @@ describe("adapter health routes", () => {
     expect(bridge?.state).toBe("healthy");
     expect(bridge?.durability).toBe("memory");
   });
+
+  test("reports healthy remote zk bridge health for env-configured oauth-style credentials", async () => {
+    const container = createContainer(undefined, {
+      env: {
+        PACT_ZK_PROVER_MODE: "bridge-remote",
+        PACT_ZK_ADAPTER_NAME: "bridge-remote-health",
+        PACT_ZK_REMOTE_ENDPOINT: "https://zk.example.test/prover",
+        PACT_ZK_REMOTE_PROVIDER_ID: "appendix-c-provider",
+        PACT_ZK_REMOTE_CREDENTIAL_TYPE: "oauth2",
+        PACT_ZK_REMOTE_CREDENTIAL_ACCESS_TOKEN: "secret-token",
+      },
+    });
+
+    const app = createApp(undefined, { container });
+    const response = await app.request("/zk/adapters/health");
+    const body = (await response.json()) as {
+      status: string;
+      adapters: Array<{
+        name: string;
+        state: string;
+        durability?: string;
+        features?: Record<string, string | boolean | number>;
+        lastError?: { code?: string };
+      }>;
+    };
+    const bridge = body.adapters.find((entry) => entry.name === "zk-prover-bridge");
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe("healthy");
+    expect(bridge?.state).toBe("healthy");
+    expect(bridge?.durability).toBe("remote");
+    expect(bridge?.features?.providerId).toBe("appendix-c-provider");
+    expect(bridge?.features?.configuredCredentialFields).toBe("accessToken");
+    expect(bridge?.features?.requiredCredentialFields).toBe("accessToken");
+    expect(bridge?.lastError).toBeUndefined();
+  });
+
+  test("reports explicit remote zk endpoint configuration failures", async () => {
+    const container = createContainer(undefined, {
+      env: {
+        PACT_ZK_PROVER_MODE: "bridge-remote",
+        PACT_ZK_ADAPTER_NAME: "bridge-remote-degraded",
+        PACT_ZK_REMOTE_CREDENTIAL_TYPE: "bearer",
+        PACT_ZK_REMOTE_CREDENTIAL_TOKEN: "secret-token",
+      },
+    });
+
+    const app = createApp(undefined, { container });
+    const response = await app.request("/zk/adapters/health");
+    const body = (await response.json()) as {
+      status: string;
+      adapters: Array<{ name: string; state: string; lastError?: { code?: string } }>;
+    };
+    const bridge = body.adapters.find((entry) => entry.name === "zk-prover-bridge");
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe("degraded");
+    expect(bridge?.state).toBe("degraded");
+    expect(bridge?.lastError?.code).toBe("zk_remote_endpoint_missing");
+  });
 });
