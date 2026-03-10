@@ -37,7 +37,7 @@ export class RemoteHttpManagedStoreAdapterSkeleton<TValue = unknown>
 
   async put(record: ManagedStoreRecord<TValue>, options?: ManagedStorePutOptions): Promise<void> {
     const existing = this.records.get(record.key);
-    if (options?.expectedEtag && existing?.etag !== options.expectedEtag) {
+    if (options?.expectedEtag !== undefined && existing?.etag !== options.expectedEtag) {
       throw new Error(`managed store etag mismatch for key ${record.key}`);
     }
 
@@ -73,7 +73,9 @@ export class RemoteHttpManagedStoreAdapterSkeleton<TValue = unknown>
 
       items.push(cloneRecord(record));
       if (items.length === limit) {
-        nextCursor = index < sortedKeys.length - 1 ? key : undefined;
+        nextCursor = sortedKeys.slice(index + 1).some((candidate) => candidate.startsWith(prefix))
+          ? key
+          : undefined;
         break;
       }
     }

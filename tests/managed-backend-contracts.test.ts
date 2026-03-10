@@ -173,7 +173,20 @@ describe("managed backend contracts", () => {
       value: "cid://asset-2",
       updatedAt: 1_710_000_000_001,
     });
+    await dataStore.put({
+      key: "log:1",
+      value: "cid://log-1",
+      updatedAt: 1_710_000_000_002,
+    });
     const page = await dataStore.list({ prefix: "asset:", limit: 1 });
+    const terminalPage = await dataStore.list({ prefix: "asset:2", limit: 1 });
+    await expect(dataStore.put({
+      key: "asset:1",
+      value: "cid://asset-1b",
+      updatedAt: 1_710_000_000_003,
+    }, {
+      expectedEtag: "sha256:stale",
+    })).rejects.toThrow("managed store etag mismatch");
     await devObservability.recordMetric({
       name: "integration.deployments",
       type: "counter",
@@ -228,6 +241,9 @@ describe("managed backend contracts", () => {
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.key).toBe("asset:1");
     expect(page.nextCursor).toBe("asset:1");
+    expect(terminalPage.items).toHaveLength(1);
+    expect(terminalPage.items[0]?.key).toBe("asset:2");
+    expect(terminalPage.nextCursor).toBeUndefined();
     expect(dataResponse.status).toBe(200);
     expect(devResponse.status).toBe(200);
     expect(dataBody.status).toBe("healthy");
@@ -237,7 +253,7 @@ describe("managed backend contracts", () => {
     expect(dataStoreHealth?.profile?.endpoint).toBe("https://managed.example.com/data/store");
     expect(dataStoreHealth?.profile?.credentialType).toBe("api_key");
     expect(dataStoreHealth?.features?.skeleton).toBe(true);
-    expect(dataStoreHealth?.features?.storedRecords).toBe(2);
+    expect(dataStoreHealth?.features?.storedRecords).toBe(3);
     expect(devObservabilityHealth?.mode).toBe("remote");
     expect(devObservabilityHealth?.state).toBe("healthy");
     expect(devObservabilityHealth?.profile?.endpoint).toBe("https://managed.example.com/dev/observability");
