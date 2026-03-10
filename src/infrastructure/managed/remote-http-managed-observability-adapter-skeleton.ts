@@ -28,7 +28,7 @@ export class RemoteHttpManagedObservabilityAdapterSkeleton
   private readonly profile: ManagedBackendProfile;
   private readonly metrics: ManagedMetricRecord[] = [];
   private readonly traces: ManagedTraceRecord[] = [];
-  private lastFlushedAt: number | "never" = "never";
+  private flushCount = 0;
 
   constructor(options: RemoteHttpManagedObservabilityAdapterSkeletonOptions) {
     this.domain = options.domain;
@@ -44,7 +44,9 @@ export class RemoteHttpManagedObservabilityAdapterSkeleton
   }
 
   async flush(): Promise<void> {
-    this.lastFlushedAt = Date.now();
+    this.flushCount += 1;
+    this.metrics.length = 0;
+    this.traces.length = 0;
   }
 
   getManagedHealth(): ManagedBackendHealthReport {
@@ -57,7 +59,7 @@ export class RemoteHttpManagedObservabilityAdapterSkeleton
         managedObservability: true,
         bufferedMetrics: this.metrics.length,
         bufferedTraces: this.traces.length,
-        lastFlushedAt: this.lastFlushedAt,
+        flushCount: this.flushCount,
       },
     });
   }

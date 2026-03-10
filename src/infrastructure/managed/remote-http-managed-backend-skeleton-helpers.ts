@@ -12,6 +12,12 @@ export const REMOTE_MANAGED_BACKEND_DURABILITY: AdapterDurability = "remote";
 export function cloneManagedBackendProfile(profile: ManagedBackendProfile): ManagedBackendProfile {
   return {
     ...profile,
+    credentialSchema: profile.credentialSchema
+      ? {
+          ...profile.credentialSchema,
+          fields: profile.credentialSchema.fields.map((field) => ({ ...field })),
+        }
+      : undefined,
     configuredCredentialFields: [...(profile.configuredCredentialFields ?? [])],
     metadata: profile.metadata ? { ...profile.metadata } : undefined,
   };

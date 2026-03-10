@@ -43,7 +43,7 @@ export class RemoteHttpManagedStoreAdapterSkeleton<TValue = unknown>
 
     this.records.set(record.key, cloneRecord({
       ...record,
-      etag: record.etag ?? `${this.profile.backendId}:${record.key}:${record.updatedAt}`,
+      etag: record.etag ?? await createManagedStoreEtag(record),
     }));
   }
 
@@ -109,4 +109,19 @@ function cloneRecord<TValue>(record: ManagedStoreRecord<TValue>): ManagedStoreRe
     ...record,
     metadata: record.metadata ? { ...record.metadata } : undefined,
   };
+}
+
+async function createManagedStoreEtag<TValue>(record: ManagedStoreRecord<TValue>): Promise<string> {
+  const payload = JSON.stringify({
+    key: record.key,
+    value: record.value,
+    updatedAt: record.updatedAt,
+    metadata: record.metadata ?? undefined,
+  });
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+  return `sha256:${bufferToHex(digest)}`;
+}
+
+function bufferToHex(buffer: ArrayBuffer): string {
+  return [...new Uint8Array(buffer)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
