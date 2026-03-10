@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
+  createManagedBackendProfile,
+  loadManagedBackendProfileFromEnv,
   normalizeManagedBackendConfiguredCredentialFields,
   normalizeManagedBackendCredentialSchemaFields,
   normalizeManagedBackendRequiredCredentialFields,
@@ -295,6 +297,44 @@ describe("managed backend contracts", () => {
       { key: "accessToken", required: true, secret: true },
       { key: "projectId", required: false },
     ]);
+  });
+
+  it("exports managed backend profile loaders through the public API", () => {
+    const profile = loadManagedBackendProfileFromEnv(
+      {
+        PACT_DEV_OBSERVABILITY_BACKEND_PROFILE_JSON: JSON.stringify({
+          backendId: "managed-dev-observability",
+          providerId: "managed-dev",
+          credentialType: "service_account",
+          configuredCredentialFields: ["email"],
+        }),
+        PACT_DEV_OBSERVABILITY_BACKEND_ENDPOINT: "https://managed.example.com/dev/observability",
+        PACT_DEV_OBSERVABILITY_BACKEND_CREDENTIAL_PROJECT_ID: "managed-project",
+      },
+      {
+        envPrefix: "PACT_DEV_OBSERVABILITY_BACKEND",
+        defaultBackendId: "dev-observability-backend",
+        defaultProviderId: "dev-observability",
+        defaultDisplayName: "Dev observability backend",
+      },
+    );
+
+    expect(profile).toEqual(
+      createManagedBackendProfile(
+        {
+          backendId: "managed-dev-observability",
+          providerId: "managed-dev",
+          endpoint: "https://managed.example.com/dev/observability",
+          credentialType: "service_account",
+          configuredCredentialFields: ["clientEmail", "projectId"],
+        },
+        {
+          defaultBackendId: "dev-observability-backend",
+          defaultProviderId: "dev-observability",
+          defaultDisplayName: "Dev observability backend",
+        },
+      ),
+    );
   });
 
   it("routes PactData publications through managed queue, store, and observability adapters", async () => {

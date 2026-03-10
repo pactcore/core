@@ -18,7 +18,7 @@ import { RemoteHttpManagedStoreAdapterSkeleton } from "./remote-http-managed-sto
 
 type EnvLike = Record<string, string | undefined>;
 
-interface ManagedBackendProfileLoaderOptions {
+export interface ManagedBackendProfileLoaderOptions {
   envPrefix: string;
   defaultBackendId: string;
   defaultProviderId: string;
@@ -94,7 +94,7 @@ function loadManagedBackendAdapterFromEnv(
   return new RemoteHttpManagedObservabilityAdapterSkeleton({ domain, profile });
 }
 
-function loadManagedBackendProfileFromEnv(
+export function loadManagedBackendProfileFromEnv(
   env: EnvLike,
   options: ManagedBackendProfileLoaderOptions,
 ): ManagedBackendProfile | undefined {
@@ -182,7 +182,7 @@ function loadManagedBackendProfileInputFromEnv(
   };
 }
 
-function createManagedBackendProfile(
+export function createManagedBackendProfile(
   input: Partial<ManagedBackendProfile> & {
     credentialType?: ManagedBackendCredentialType;
     credentialSchema?: Partial<ManagedBackendCredentialSchema>;

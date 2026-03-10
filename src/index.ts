@@ -556,7 +556,12 @@ export { PricingEngine } from "./infrastructure/compute/pricing-engine";
 export { RemoteHttpManagedQueueAdapterSkeleton } from "./infrastructure/managed/remote-http-managed-queue-adapter-skeleton";
 export { RemoteHttpManagedStoreAdapterSkeleton } from "./infrastructure/managed/remote-http-managed-store-adapter-skeleton";
 export { RemoteHttpManagedObservabilityAdapterSkeleton } from "./infrastructure/managed/remote-http-managed-observability-adapter-skeleton";
-export { createManagedBackendInventoryFromEnv } from "./infrastructure/managed/default-managed-backends";
+export {
+  createManagedBackendInventoryFromEnv,
+  createManagedBackendProfile,
+  loadManagedBackendProfileFromEnv,
+  type ManagedBackendProfileLoaderOptions,
+} from "./infrastructure/managed/default-managed-backends";
 export {
   calculateJobCost,
   findBestTier,
