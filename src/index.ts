@@ -491,6 +491,10 @@ export {
 } from "./application/adapter-runtime";
 export {
   aggregateManagedBackendHealth,
+  normalizeManagedBackendConfiguredCredentialFields,
+  normalizeManagedBackendCredentialKey,
+  normalizeManagedBackendCredentialSchemaFields,
+  normalizeManagedBackendRequiredCredentialFields,
   resolveManagedBackendHealth,
   summarizeManagedBackendProfile,
 } from "./application/managed-backends";
