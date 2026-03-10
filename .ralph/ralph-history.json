@@ -2,36 +2,44 @@
   "iterations": [
     {
       "iteration": 1,
-      "startedAt": "2026-03-10T17:59:20.516Z",
-      "endedAt": "2026-03-10T18:01:43.770Z",
-      "durationMs": 142968,
+      "startedAt": "2026-03-10T17:50:06.900Z",
+      "endedAt": "2026-03-10T18:01:36.748Z",
+      "durationMs": 689505,
       "agent": "codex",
       "model": "gpt-5.4",
-      "toolsUsed": {},
+      "toolsUsed": {
+        "a": 1,
+        "the": 2
+      },
       "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json",
         "src/application/container.ts",
         "src/index.ts",
-        "src/infrastructure/managed/default-managed-backends.ts",
         "src/infrastructure/settlement/external-settlement-connector-base.ts",
         "tests/live-settlement-onchain-bridge.test.ts",
         "tests/managed-backend-contracts.test.ts",
-        ".ralph/"
+        ".ralph/",
+        "src/infrastructure/managed/default-managed-backends.ts",
+        "src/infrastructure/managed/remote-http-managed-backend-skeleton-helpers.ts",
+        "src/infrastructure/managed/remote-http-managed-observability-adapter-skeleton.ts",
+        "src/infrastructure/managed/remote-http-managed-queue-adapter-skeleton.ts",
+        "src/infrastructure/managed/remote-http-managed-store-adapter-skeleton.ts"
       ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
+        "-      lastError: missingFields.length > 0",
+        "lastError: missingFields.length > 0",
+        "+    lastError: missingFields.length > 0",
+        "SyntaxError: Cannot export a duplicate name 'RemoteHttpManagedStoreAdapterSkeleton'.",
         "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error decoding response body)",
-        "Reconnecting... 5/5 (stream disconnected before completion: Transport error: network error: error decoding response body)",
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da439ed9fa12393-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da439af2b2bee17-SJC"
       ]
     },
     {
       "iteration": 2,
-      "startedAt": "2026-03-10T18:01:45.115Z",
-      "endedAt": "2026-03-10T18:02:13.706Z",
-      "durationMs": 28268,
+      "startedAt": "2026-03-10T18:01:38.078Z",
+      "endedAt": "2026-03-10T18:02:06.626Z",
+      "durationMs": 28248,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -42,68 +50,68 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43aa88e210653-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43a7c69eb0065-SJC"
       ]
     },
     {
       "iteration": 3,
-      "startedAt": "2026-03-10T18:02:15.008Z",
-      "endedAt": "2026-03-10T18:02:43.887Z",
-      "durationMs": 28585,
+      "startedAt": "2026-03-10T18:02:07.978Z",
+      "endedAt": "2026-03-10T18:02:36.863Z",
+      "durationMs": 28561,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
       "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
+        ".ralph/ralph-history.json",
+        ".ralph/ralph-loop.state.json"
       ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43b655c06a666-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43b392dfa97f0-SJC"
       ]
     },
     {
       "iteration": 4,
-      "startedAt": "2026-03-10T18:02:45.218Z",
-      "endedAt": "2026-03-10T18:03:13.535Z",
-      "durationMs": 27981,
+      "startedAt": "2026-03-10T18:02:38.190Z",
+      "endedAt": "2026-03-10T18:03:06.133Z",
+      "durationMs": 27626,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
       "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
+        ".ralph/ralph-history.json",
+        ".ralph/ralph-loop.state.json"
       ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43c1e485acf45-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43bf028dbf457-SJC"
       ]
     },
     {
       "iteration": 5,
-      "startedAt": "2026-03-10T18:03:14.893Z",
-      "endedAt": "2026-03-10T18:03:44.158Z",
-      "durationMs": 28975,
+      "startedAt": "2026-03-10T18:03:07.436Z",
+      "endedAt": "2026-03-10T18:03:36.216Z",
+      "durationMs": 28479,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
       "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
+        ".ralph/ralph-history.json",
+        ".ralph/ralph-loop.state.json"
       ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43cddfb5389cc-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43cac5976b828-SJC"
       ]
     },
     {
       "iteration": 6,
-      "startedAt": "2026-03-10T18:03:45.500Z",
-      "endedAt": "2026-03-10T18:04:14.505Z",
-      "durationMs": 28702,
+      "startedAt": "2026-03-10T18:03:37.558Z",
+      "endedAt": "2026-03-10T18:04:06.272Z",
+      "durationMs": 28382,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -114,14 +122,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43d9b9f5f7af1-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43d680d832c39-SJC"
       ]
     },
     {
       "iteration": 7,
-      "startedAt": "2026-03-10T18:04:15.836Z",
-      "endedAt": "2026-03-10T18:04:43.901Z",
-      "durationMs": 27781,
+      "startedAt": "2026-03-10T18:04:07.617Z",
+      "endedAt": "2026-03-10T18:04:37.048Z",
+      "durationMs": 29088,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -132,14 +140,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43e538c46cfc0-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43e282d56fa2a-SJC"
       ]
     },
     {
       "iteration": 8,
-      "startedAt": "2026-03-10T18:04:45.237Z",
-      "endedAt": "2026-03-10T18:05:14.197Z",
-      "durationMs": 28679,
+      "startedAt": "2026-03-10T18:04:38.404Z",
+      "endedAt": "2026-03-10T18:05:07.848Z",
+      "durationMs": 29130,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -150,14 +158,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43f10de498e1f-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43ee8ff8e67be-SJC"
       ]
     },
     {
       "iteration": 9,
-      "startedAt": "2026-03-10T18:05:15.490Z",
-      "endedAt": "2026-03-10T18:05:43.488Z",
-      "durationMs": 27680,
+      "startedAt": "2026-03-10T18:05:09.131Z",
+      "endedAt": "2026-03-10T18:05:37.881Z",
+      "durationMs": 28468,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -168,68 +176,68 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43fc798e47803-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da43fa4d87f2af7-SJC"
       ]
     },
     {
       "iteration": 10,
-      "startedAt": "2026-03-10T18:05:44.806Z",
-      "endedAt": "2026-03-10T18:06:13.784Z",
-      "durationMs": 28664,
+      "startedAt": "2026-03-10T18:05:39.232Z",
+      "endedAt": "2026-03-10T18:06:07.546Z",
+      "durationMs": 28020,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
       "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
+        ".ralph/ralph-history.json",
+        ".ralph/ralph-loop.state.json"
       ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44084f88a23a9-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da4405e3f315616-SJC"
       ]
     },
     {
       "iteration": 11,
-      "startedAt": "2026-03-10T18:06:15.076Z",
-      "endedAt": "2026-03-10T18:06:43.747Z",
-      "durationMs": 28372,
+      "startedAt": "2026-03-10T18:06:08.841Z",
+      "endedAt": "2026-03-10T18:06:37.986Z",
+      "durationMs": 28817,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
       "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
+        ".ralph/ralph-history.json",
+        ".ralph/ralph-loop.state.json"
       ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da441406dfac487-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da4411c38ac88f5-SJC"
       ]
     },
     {
       "iteration": 12,
-      "startedAt": "2026-03-10T18:06:45.062Z",
-      "endedAt": "2026-03-10T18:07:14.489Z",
-      "durationMs": 29154,
+      "startedAt": "2026-03-10T18:06:39.304Z",
+      "endedAt": "2026-03-10T18:07:07.857Z",
+      "durationMs": 28252,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
       "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
+        ".ralph/ralph-history.json",
+        ".ralph/ralph-loop.state.json"
       ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44200ba8fe196-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da441d71ca05655-SJC"
       ]
     },
     {
       "iteration": 13,
-      "startedAt": "2026-03-10T18:07:15.793Z",
-      "endedAt": "2026-03-10T18:07:43.899Z",
-      "durationMs": 27807,
+      "startedAt": "2026-03-10T18:07:09.195Z",
+      "endedAt": "2026-03-10T18:07:37.850Z",
+      "durationMs": 28342,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -240,31 +248,49 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da442b8597a41ce-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da442926bea98ce-SJC"
       ]
     },
     {
       "iteration": 14,
-      "startedAt": "2026-03-10T18:07:45.250Z",
-      "endedAt": "2026-03-10T18:08:14.079Z",
-      "durationMs": 28495,
+      "startedAt": "2026-03-10T18:07:39.144Z",
+      "endedAt": "2026-03-10T18:08:08.456Z",
+      "durationMs": 29009,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
       "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
+        ".ralph/ralph-history.json",
+        ".ralph/ralph-loop.state.json"
       ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44374bf06df9a-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44351daa19338-SJC"
       ]
     },
     {
       "iteration": 15,
-      "startedAt": "2026-03-10T18:08:15.414Z",
-      "endedAt": "2026-03-10T18:08:44.125Z",
+      "startedAt": "2026-03-10T18:08:09.766Z",
+      "endedAt": "2026-03-10T18:08:38.515Z",
+      "durationMs": 28432,
+      "agent": "codex",
+      "model": "gpt-5.4",
+      "toolsUsed": {},
+      "filesModified": [
+        ".ralph/ralph-history.json",
+        ".ralph/ralph-loop.state.json"
+      ],
+      "exitCode": 1,
+      "completionDetected": false,
+      "errors": [
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da4440d9a1ede03-SJC"
+      ]
+    },
+    {
+      "iteration": 16,
+      "startedAt": "2026-03-10T18:08:39.801Z",
+      "endedAt": "2026-03-10T18:09:08.555Z",
       "durationMs": 28430,
       "agent": "codex",
       "model": "gpt-5.4",
@@ -276,32 +302,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44430deb2bffc-SJC"
-      ]
-    },
-    {
-      "iteration": 16,
-      "startedAt": "2026-03-10T18:08:45.482Z",
-      "endedAt": "2026-03-10T18:09:15.015Z",
-      "durationMs": 29235,
-      "agent": "codex",
-      "model": "gpt-5.4",
-      "toolsUsed": {},
-      "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
-      ],
-      "exitCode": 1,
-      "completionDetected": false,
-      "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da444f1cf69de03-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da444c94af59441-SJC"
       ]
     },
     {
       "iteration": 17,
-      "startedAt": "2026-03-10T18:09:16.324Z",
-      "endedAt": "2026-03-10T18:09:44.978Z",
-      "durationMs": 28291,
+      "startedAt": "2026-03-10T18:09:09.867Z",
+      "endedAt": "2026-03-10T18:09:38.947Z",
+      "durationMs": 28793,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -312,14 +320,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da445acb8c11975-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da445878d00b7dd-SJC"
       ]
     },
     {
       "iteration": 18,
-      "startedAt": "2026-03-10T18:09:46.306Z",
-      "endedAt": "2026-03-10T18:10:14.805Z",
-      "durationMs": 28229,
+      "startedAt": "2026-03-10T18:09:40.245Z",
+      "endedAt": "2026-03-10T18:10:09.007Z",
+      "durationMs": 28466,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -330,32 +338,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44667bb1ecf12-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da446433948df0a-SJC"
       ]
     },
     {
       "iteration": 19,
-      "startedAt": "2026-03-10T18:10:16.098Z",
-      "endedAt": "2026-03-10T18:10:44.570Z",
-      "durationMs": 28175,
-      "agent": "codex",
-      "model": "gpt-5.4",
-      "toolsUsed": {},
-      "filesModified": [
-        ".ralph/ralph-history.json",
-        ".ralph/ralph-loop.state.json"
-      ],
-      "exitCode": 1,
-      "completionDetected": false,
-      "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da447218c182db6-SJC"
-      ]
-    },
-    {
-      "iteration": 20,
-      "startedAt": "2026-03-10T18:10:45.882Z",
-      "endedAt": "2026-03-10T18:11:14.703Z",
-      "durationMs": 28534,
+      "startedAt": "2026-03-10T18:10:10.303Z",
+      "endedAt": "2026-03-10T18:10:38.755Z",
+      "durationMs": 28188,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -366,14 +356,32 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da447ddf81715e1-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da446fd7cb6ad44-SJC"
+      ]
+    },
+    {
+      "iteration": 20,
+      "startedAt": "2026-03-10T18:10:40.040Z",
+      "endedAt": "2026-03-10T18:11:08.108Z",
+      "durationMs": 27749,
+      "agent": "codex",
+      "model": "gpt-5.4",
+      "toolsUsed": {},
+      "filesModified": [
+        ".ralph/ralph-loop.state.json",
+        ".ralph/ralph-history.json"
+      ],
+      "exitCode": 1,
+      "completionDetected": false,
+      "errors": [
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da447b48ea8f56e-SJC"
       ]
     },
     {
       "iteration": 21,
-      "startedAt": "2026-03-10T18:11:16.021Z",
-      "endedAt": "2026-03-10T18:12:03.961Z",
-      "durationMs": 47633,
+      "startedAt": "2026-03-10T18:11:09.403Z",
+      "endedAt": "2026-03-10T18:12:03.486Z",
+      "durationMs": 53799,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -385,47 +393,50 @@
       "completionDetected": false,
       "errors": [
         "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error decoding response body)",
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44911aca3cf11-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da4490eef0d2994-SJC"
       ]
     },
     {
       "iteration": 22,
-      "startedAt": "2026-03-10T18:12:05.259Z",
-      "endedAt": "2026-03-10T18:12:33.476Z",
-      "durationMs": 27918,
+      "startedAt": "2026-03-10T18:12:04.824Z",
+      "endedAt": "2026-03-10T18:12:33.747Z",
+      "durationMs": 28644,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
-      "filesModified": [],
+      "filesModified": [
+        ".ralph/ralph-loop.state.json",
+        ".ralph/ralph-history.json"
+      ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da449ca3ca834a1-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da449cc0a63e8cc-SJC"
       ]
     },
     {
       "iteration": 23,
-      "startedAt": "2026-03-10T18:12:34.760Z",
-      "endedAt": "2026-03-10T18:13:03.194Z",
-      "durationMs": 28091,
+      "startedAt": "2026-03-10T18:12:35.061Z",
+      "endedAt": "2026-03-10T18:13:03.610Z",
+      "durationMs": 28245,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
       "filesModified": [
-        ".ralph/ralph-history.json",
-        ".ralph/ralph-loop.state.json"
+        ".ralph/ralph-loop.state.json",
+        ".ralph/ralph-history.json"
       ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44a83acb9053e-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44a868fb5ceb5-SJC"
       ]
     },
     {
       "iteration": 24,
-      "startedAt": "2026-03-10T18:13:04.531Z",
-      "endedAt": "2026-03-10T18:13:33.075Z",
-      "durationMs": 28288,
+      "startedAt": "2026-03-10T18:13:04.919Z",
+      "endedAt": "2026-03-10T18:13:33.442Z",
+      "durationMs": 28260,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -436,14 +447,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44b3efa265e16-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44b413e0ee9e7-SJC"
       ]
     },
     {
       "iteration": 25,
-      "startedAt": "2026-03-10T18:13:34.357Z",
-      "endedAt": "2026-03-10T18:14:03.310Z",
-      "durationMs": 28630,
+      "startedAt": "2026-03-10T18:13:34.746Z",
+      "endedAt": "2026-03-10T18:14:03.727Z",
+      "durationMs": 28671,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -454,104 +465,103 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44bfb8ec8f8f3-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44bfe4ef02574-SJC"
       ]
     },
     {
       "iteration": 26,
-      "startedAt": "2026-03-10T18:14:04.671Z",
-      "endedAt": "2026-03-10T18:14:33.780Z",
-      "durationMs": 28837,
+      "startedAt": "2026-03-10T18:14:05.080Z",
+      "endedAt": "2026-03-10T18:14:33.690Z",
+      "durationMs": 28339,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
       "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
-      ],
-      "exitCode": 1,
-      "completionDetected": false,
-      "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44cba4dd41746-SJC"
-      ]
-    },
-    {
-      "iteration": 27,
-      "startedAt": "2026-03-10T18:14:35.090Z",
-      "endedAt": "2026-03-10T18:15:03.377Z",
-      "durationMs": 27939,
-      "agent": "codex",
-      "model": "gpt-5.4",
-      "toolsUsed": {},
-      "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
-      ],
-      "exitCode": 1,
-      "completionDetected": false,
-      "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44d72bf77de51-SJC"
-      ]
-    },
-    {
-      "iteration": 28,
-      "startedAt": "2026-03-10T18:15:04.740Z",
-      "endedAt": "2026-03-10T18:15:33.522Z",
-      "durationMs": 28498,
-      "agent": "codex",
-      "model": "gpt-5.4",
-      "toolsUsed": {},
-      "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
-      ],
-      "exitCode": 1,
-      "completionDetected": false,
-      "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44e2f9baa909c-SJC"
-      ]
-    },
-    {
-      "iteration": 29,
-      "startedAt": "2026-03-10T18:15:34.862Z",
-      "endedAt": "2026-03-10T18:16:03.609Z",
-      "durationMs": 28480,
-      "agent": "codex",
-      "model": "gpt-5.4",
-      "toolsUsed": {},
-      "filesModified": [
-        ".ralph/ralph-loop.state.json",
-        ".ralph/ralph-history.json"
-      ],
-      "exitCode": 1,
-      "completionDetected": false,
-      "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44eebbf1167ca-SJC"
-      ]
-    },
-    {
-      "iteration": 30,
-      "startedAt": "2026-03-10T18:16:04.925Z",
-      "endedAt": "2026-03-10T18:16:36.600Z",
-      "durationMs": 31399,
-      "agent": "codex",
-      "model": "gpt-5.4",
-      "toolsUsed": {},
-      "filesModified": [
-        ".ralph/ralph-history.json",
         ".ralph/ralph-loop.state.json"
       ],
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44fb80825053e-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44cb9beb61d41-SJC"
+      ]
+    },
+    {
+      "iteration": 27,
+      "startedAt": "2026-03-10T18:14:35.011Z",
+      "endedAt": "2026-03-10T18:15:03.373Z",
+      "durationMs": 28032,
+      "agent": "codex",
+      "model": "gpt-5.4",
+      "toolsUsed": {},
+      "filesModified": [
+        ".ralph/ralph-loop.state.json",
+        ".ralph/ralph-history.json"
+      ],
+      "exitCode": 1,
+      "completionDetected": false,
+      "errors": [
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44d72ef892af7-SJC"
+      ]
+    },
+    {
+      "iteration": 28,
+      "startedAt": "2026-03-10T18:15:04.727Z",
+      "endedAt": "2026-03-10T18:15:33.755Z",
+      "durationMs": 28723,
+      "agent": "codex",
+      "model": "gpt-5.4",
+      "toolsUsed": {},
+      "filesModified": [
+        ".ralph/ralph-loop.state.json",
+        ".ralph/ralph-history.json"
+      ],
+      "exitCode": 1,
+      "completionDetected": false,
+      "errors": [
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44e30eac815da-SJC"
+      ]
+    },
+    {
+      "iteration": 29,
+      "startedAt": "2026-03-10T18:15:35.079Z",
+      "endedAt": "2026-03-10T18:16:03.212Z",
+      "durationMs": 27884,
+      "agent": "codex",
+      "model": "gpt-5.4",
+      "toolsUsed": {},
+      "filesModified": [
+        ".ralph/ralph-loop.state.json",
+        ".ralph/ralph-history.json"
+      ],
+      "exitCode": 1,
+      "completionDetected": false,
+      "errors": [
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44ee94f7b22a2-SJC"
+      ]
+    },
+    {
+      "iteration": 30,
+      "startedAt": "2026-03-10T18:16:04.520Z",
+      "endedAt": "2026-03-10T18:16:44.990Z",
+      "durationMs": 40180,
+      "agent": "codex",
+      "model": "gpt-5.4",
+      "toolsUsed": {},
+      "filesModified": [
+        ".ralph/ralph-loop.state.json",
+        ".ralph/ralph-history.json"
+      ],
+      "exitCode": 1,
+      "completionDetected": false,
+      "errors": [
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da44fee387d5850-SJC"
       ]
     },
     {
       "iteration": 31,
-      "startedAt": "2026-03-10T18:16:37.896Z",
-      "endedAt": "2026-03-10T18:17:20.684Z",
-      "durationMs": 42463,
+      "startedAt": "2026-03-10T18:16:46.291Z",
+      "endedAt": "2026-03-10T18:17:21.185Z",
+      "durationMs": 34600,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -562,14 +572,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da450ccfd5f67a6-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da450d06d37b625-SJC"
       ]
     },
     {
       "iteration": 32,
-      "startedAt": "2026-03-10T18:17:21.995Z",
-      "endedAt": "2026-03-10T18:17:50.704Z",
-      "durationMs": 28420,
+      "startedAt": "2026-03-10T18:17:22.488Z",
+      "endedAt": "2026-03-10T18:17:51.600Z",
+      "durationMs": 28810,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -580,14 +590,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da45188ea7f2b29-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da4518e7e3af037-SJC"
       ]
     },
     {
       "iteration": 33,
-      "startedAt": "2026-03-10T18:17:52.028Z",
-      "endedAt": "2026-03-10T18:18:20.466Z",
-      "durationMs": 28146,
+      "startedAt": "2026-03-10T18:17:52.886Z",
+      "endedAt": "2026-03-10T18:18:21.741Z",
+      "durationMs": 28569,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -598,14 +608,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da45242f83d7ac7-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da4524aee1e8b9e-SJC"
       ]
     },
     {
       "iteration": 34,
-      "startedAt": "2026-03-10T18:18:21.769Z",
-      "endedAt": "2026-03-10T18:18:50.073Z",
-      "durationMs": 28005,
+      "startedAt": "2026-03-10T18:18:23.052Z",
+      "endedAt": "2026-03-10T18:18:51.715Z",
+      "durationMs": 28344,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -616,14 +626,14 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da452fbeed12a56-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da4530609dd6bb4-SJC"
       ]
     },
     {
       "iteration": 35,
-      "startedAt": "2026-03-10T18:18:51.378Z",
-      "endedAt": "2026-03-10T18:19:20.147Z",
-      "durationMs": 28484,
+      "startedAt": "2026-03-10T18:18:53.016Z",
+      "endedAt": "2026-03-10T18:19:21.805Z",
+      "durationMs": 28505,
       "agent": "codex",
       "model": "gpt-5.4",
       "toolsUsed": {},
@@ -634,15 +644,18 @@
       "exitCode": 1,
       "completionDetected": false,
       "errors": [
-        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da453b80fc15bc0-SJC"
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da453c249fb26d3-SJC"
       ]
     }
   ],
-  "totalDurationMs": 1144236,
+  "totalDurationMs": 1699590,
   "struggleIndicators": {
     "repeatedErrors": {
+      "-      lastError: missingFields.length > 0": 1,
+      "lastError: missingFields.length > 0": 1,
+      "+    lastError: missingFields.length > 0": 1,
+      "SyntaxError: Cannot export a duplicate name 'RemoteHttpManagedStoreAdapterSkeleton'.": 1,
       "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error de": 2,
-      "Reconnecting... 5/5 (stream disconnected before completion: Transport error: network error: error de": 1,
       "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/respons": 35
     },
     "noProgressIterations": 0,
