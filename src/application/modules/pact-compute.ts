@@ -92,6 +92,7 @@ export class PactCompute {
   }
 
   async enqueueComputeJob(input: ComputeJobInput): Promise<ScheduledJob> {
+    const createdAt = input.runAt ?? Date.now();
     const job: ScheduledJob = {
       id: generateId("job"),
       topic: "compute.exec",
@@ -100,11 +101,12 @@ export class PactCompute {
         command: input.command,
         metadata: input.metadata ?? {},
       },
-      runAt: input.runAt ?? Date.now(),
+      runAt: createdAt,
     };
 
     await this.scheduler.schedule(job);
     this.jobs.set(job.id, job);
+    await this.syncManagedJobEnqueue(job, createdAt);
     return job;
   }
 
@@ -182,6 +184,7 @@ export class PactCompute {
           message: enriched.status === "completed" ? "Compute execution completed" : enriched.error,
           error: enriched.status === "failed" ? this.descriptorFromFailedResult(enriched) : undefined,
         }, options);
+        await this.syncManagedDispatchOutcome(job, provider, enriched);
         return enriched;
       } catch (error) {
         const adapterError = this.normalizeExecutionError(error);
@@ -217,6 +220,7 @@ export class PactCompute {
 
         const failed = this.createFailedResult(job.id, provider, attempt, terminalState, adapterError);
         await this.resourceMeter.record(failed.usage);
+        await this.syncManagedDispatchOutcome(job, provider, failed);
         return failed;
       }
     }
@@ -536,6 +540,16 @@ export class PactCompute {
     options?: ComputeDispatchOptions,
   ): Promise<void> {
     await this.checkpointStore?.save(checkpoint);
+    await this.managedBackends.store?.put({
+      key: `checkpoint:${checkpoint.jobId}:${checkpoint.attempt}:${checkpoint.state}:${checkpoint.createdAt}`,
+      value: checkpoint,
+      updatedAt: checkpoint.createdAt,
+      metadata: {
+        jobId: checkpoint.jobId,
+        providerId: checkpoint.providerId,
+        checkpointState: checkpoint.state,
+      },
+    });
     await options?.onCheckpoint?.(checkpoint);
   }
 
@@ -544,5 +558,77 @@ export class PactCompute {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async syncManagedJobEnqueue(job: ScheduledJob, createdAt: number): Promise<void> {
+    await this.managedBackends.queue?.enqueue({
+      id: `compute-job:${job.id}`,
+      topic: job.topic,
+      payload: job.payload,
+      createdAt,
+      runAt: job.runAt,
+      metadata: {
+        jobId: job.id,
+      },
+    });
+
+    await this.managedBackends.observability?.recordMetric({
+      name: "compute.jobs.enqueued",
+      type: "counter",
+      value: 1,
+      recordedAt: createdAt,
+      labels: {
+        topic: job.topic,
+      },
+    });
+  }
+
+  private async syncManagedDispatchOutcome(
+    job: ScheduledJob,
+    provider: ComputeProvider,
+    result: ComputeJobResult,
+  ): Promise<void> {
+    const completedAt = result.completedAt;
+    await this.managedBackends.store?.put({
+      key: `job:${job.id}`,
+      value: {
+        job,
+        result,
+      },
+      updatedAt: completedAt,
+      metadata: {
+        jobId: job.id,
+        providerId: provider.id,
+        status: result.status,
+      },
+    });
+
+    await this.managedBackends.observability?.recordMetric({
+      name: "compute.jobs.dispatched",
+      type: "counter",
+      value: 1,
+      recordedAt: completedAt,
+      labels: {
+        providerId: provider.id,
+        status: result.status,
+        terminalState: result.execution?.terminalState ?? result.status,
+      },
+    });
+
+    await this.managedBackends.observability?.recordTrace({
+      traceId: `compute-job:${job.id}`,
+      spanId: `dispatch:${result.execution?.attemptCount ?? 1}`,
+      name: "compute.job.dispatch",
+      startedAt: job.runAt,
+      endedAt: completedAt,
+      status: result.status === "completed" ? "ok" : "error",
+      attributes: {
+        jobId: job.id,
+        providerId: provider.id,
+        terminalState: result.execution?.terminalState ?? result.status,
+        attemptCount: result.execution?.attemptCount ?? 1,
+        totalCostCents: result.usage.totalCostCents,
+      },
+    });
   }
 }

@@ -67,13 +67,14 @@ export class PactData {
 
   async publish(input: PublishDataAssetInput): Promise<DataAsset> {
     return this.withDataAdapterError("publish", async () => {
+      const createdAt = Date.now();
       const asset: DataAsset = {
         id: generateId("data"),
         ownerId: input.ownerId,
         title: input.title,
         uri: input.uri,
         tags: input.tags ?? [],
-        createdAt: Date.now(),
+        createdAt,
       };
 
       await this.assetRepository.save(asset);
@@ -84,16 +85,18 @@ export class PactData {
             childId: asset.id,
             parentId,
             relationship: "derived_from",
-            createdAt: Date.now(),
+            createdAt,
           });
         }
       }
 
-      await this.accessPolicyRepository.save({
+      const policy = {
         assetId: asset.id,
         allowedParticipantIds: [input.ownerId],
         isPublic: true,
-      });
+      };
+      await this.accessPolicyRepository.save(policy);
+      await this.syncManagedPublication(asset, policy, input.derivedFrom ?? [], createdAt);
 
       return asset;
     });
@@ -416,6 +419,67 @@ export class PactData {
     await this.accessPolicyRepository.save({
       ...existingPolicy,
       allowedParticipantIds: [...existingPolicy.allowedParticipantIds, buyerId],
+    });
+  }
+
+  private async syncManagedPublication(
+    asset: DataAsset,
+    policy: DataAccessPolicy,
+    derivedFrom: string[],
+    createdAt: number,
+  ): Promise<void> {
+    await this.managedBackends.queue?.enqueue({
+      id: `data-publish:${asset.id}`,
+      topic: "data.asset.publish",
+      payload: {
+        assetId: asset.id,
+        ownerId: asset.ownerId,
+        uri: asset.uri,
+        derivedFrom,
+      },
+      createdAt,
+      metadata: {
+        assetId: asset.id,
+        ownerId: asset.ownerId,
+      },
+    });
+
+    await this.managedBackends.store?.put({
+      key: `asset:${asset.id}`,
+      value: {
+        asset,
+        accessPolicy: policy,
+        derivedFrom,
+      },
+      updatedAt: createdAt,
+      metadata: {
+        ownerId: asset.ownerId,
+        recordType: "asset_publication",
+      },
+    });
+
+    await this.managedBackends.observability?.recordMetric({
+      name: "data.assets.published",
+      type: "counter",
+      value: 1,
+      recordedAt: createdAt,
+      labels: {
+        ownerId: asset.ownerId,
+      },
+    });
+
+    await this.managedBackends.observability?.recordTrace({
+      traceId: `data-asset:${asset.id}`,
+      spanId: "publish",
+      name: "data.asset.publish",
+      startedAt: createdAt,
+      endedAt: Date.now(),
+      status: "ok",
+      attributes: {
+        assetId: asset.id,
+        ownerId: asset.ownerId,
+        derivedFromCount: derivedFrom.length,
+      },
     });
   }
 

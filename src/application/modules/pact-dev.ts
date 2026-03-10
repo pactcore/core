@@ -83,6 +83,7 @@ export class PactDev {
     };
 
     this.integrations.set(integration.id, integration);
+    await this.syncManagedIntegrationEvent("registered", integration, integration.createdAt);
     return integration;
   }
 
@@ -95,19 +96,26 @@ export class PactDev {
   }
 
   async activate(id: string): Promise<DevIntegration> {
-    return this.transitionStatus(id, "active", ["draft", "suspended"]);
+    const integration = this.transitionStatus(id, "active", ["draft", "suspended"]);
+    await this.syncManagedIntegrationEvent("activated", integration, Date.now());
+    return integration;
   }
 
   async suspend(id: string): Promise<DevIntegration> {
-    return this.transitionStatus(id, "suspended", ["active"]);
+    const integration = this.transitionStatus(id, "suspended", ["active"]);
+    await this.syncManagedIntegrationEvent("suspended", integration, Date.now());
+    return integration;
   }
 
   async deprecate(id: string): Promise<DevIntegration> {
-    return this.transitionStatus(id, "deprecated", ["active", "suspended"]);
+    const integration = this.transitionStatus(id, "deprecated", ["active", "suspended"]);
+    await this.syncManagedIntegrationEvent("deprecated", integration, Date.now());
+    return integration;
   }
 
   async registerPolicy(pkg: PolicyPackage): Promise<void> {
     await this.policyRegistry.registerPackage(pkg);
+    await this.syncManagedPolicyPackage(pkg, Date.now());
   }
 
   async getPolicy(id: string): Promise<PolicyPackage | undefined> {
@@ -134,6 +142,7 @@ export class PactDev {
     };
 
     await this.templateRepository.save(template);
+    await this.syncManagedTemplate(template, template.createdAt);
     return template;
   }
 
@@ -286,6 +295,134 @@ export class PactDev {
     }
     integration.status = target;
     return integration;
+  }
+
+  private async syncManagedIntegrationEvent(
+    action: "registered" | "activated" | "suspended" | "deprecated",
+    integration: DevIntegration,
+    recordedAt: number,
+  ): Promise<void> {
+    await this.managedBackends.queue?.enqueue({
+      id: `dev-integration:${integration.id}:${action}:${recordedAt}`,
+      topic: "dev.integration.lifecycle",
+      payload: {
+        action,
+        integrationId: integration.id,
+        ownerId: integration.ownerId,
+        status: integration.status,
+      },
+      createdAt: recordedAt,
+      metadata: {
+        integrationId: integration.id,
+        action,
+      },
+    });
+
+    await this.managedBackends.store?.put({
+      key: `integration:${integration.id}`,
+      value: integration,
+      updatedAt: recordedAt,
+      metadata: {
+        ownerId: integration.ownerId,
+        status: integration.status,
+        recordType: "integration",
+      },
+    });
+
+    await this.managedBackends.observability?.recordMetric({
+      name: "dev.integrations.lifecycle",
+      type: "counter",
+      value: 1,
+      recordedAt,
+      labels: {
+        action,
+        status: integration.status,
+      },
+    });
+
+    await this.managedBackends.observability?.recordTrace({
+      traceId: `dev-integration:${integration.id}`,
+      spanId: action,
+      name: "dev.integration.lifecycle",
+      startedAt: recordedAt,
+      endedAt: Date.now(),
+      status: "ok",
+      attributes: {
+        integrationId: integration.id,
+        ownerId: integration.ownerId,
+        status: integration.status,
+      },
+    });
+  }
+
+  private async syncManagedTemplate(template: SDKTemplate, recordedAt: number): Promise<void> {
+    await this.managedBackends.queue?.enqueue({
+      id: `dev-template:${template.id}:${recordedAt}`,
+      topic: "dev.template.register",
+      payload: {
+        templateId: template.id,
+        language: template.language,
+      },
+      createdAt: recordedAt,
+      metadata: {
+        templateId: template.id,
+      },
+    });
+
+    await this.managedBackends.store?.put({
+      key: `template:${template.id}`,
+      value: template,
+      updatedAt: recordedAt,
+      metadata: {
+        language: template.language,
+        recordType: "template",
+      },
+    });
+
+    await this.managedBackends.observability?.recordMetric({
+      name: "dev.templates.registered",
+      type: "counter",
+      value: 1,
+      recordedAt,
+      labels: {
+        language: template.language,
+      },
+    });
+  }
+
+  private async syncManagedPolicyPackage(pkg: PolicyPackage, recordedAt: number): Promise<void> {
+    await this.managedBackends.queue?.enqueue({
+      id: `dev-policy:${pkg.id}:${recordedAt}`,
+      topic: "dev.policy.register",
+      payload: {
+        policyId: pkg.id,
+        version: pkg.version,
+      },
+      createdAt: recordedAt,
+      metadata: {
+        policyId: pkg.id,
+      },
+    });
+
+    await this.managedBackends.store?.put({
+      key: `policy:${pkg.id}`,
+      value: pkg,
+      updatedAt: recordedAt,
+      metadata: {
+        version: pkg.version,
+        recordType: "policy",
+      },
+    });
+
+    await this.managedBackends.observability?.recordMetric({
+      name: "dev.policies.registered",
+      type: "counter",
+      value: 1,
+      recordedAt,
+      labels: {
+        version: pkg.version,
+      },
+    });
   }
 }
 
