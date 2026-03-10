@@ -4,10 +4,10 @@ import { PactZK } from "../src/application/modules/pact-zk";
 import {
   computeZKArtifactIntegrity,
   computeZKManifestIntegrity,
-  getCircuitDefinition,
   type ZKArtifactManifest,
-  type ZKProofType,
-} from "../src/index";
+} from "../src/domain/zk-bridge";
+import { getCircuitDefinition } from "../src/domain/zk-circuits";
+import type { ZKProofType } from "../src/domain/zk-proofs";
 import { InMemoryZKArtifactManifestRepository } from "../src/infrastructure/zk/in-memory-zk-artifact-manifest-repository";
 import { InMemoryZKProofRepository } from "../src/infrastructure/zk/in-memory-zk-proof-repository";
 import { InMemoryZKVerificationReceiptRepository } from "../src/infrastructure/zk/in-memory-zk-verification-receipt-repository";

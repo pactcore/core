@@ -52,3 +52,9 @@ Compensation classes modeled:
 3. settlement connectors for non-crypto assets (credits/quotas)
 4. anti-spam economics for challenge market behavior
 5. policy simulation and risk analysis tooling
+
+## Appendix C Coverage
+
+- external prover/verifier bridge skeleton: implemented
+- artifact manifest version and integrity validation: implemented
+- verification receipt traceability for bridge-backed proofs: implemented
