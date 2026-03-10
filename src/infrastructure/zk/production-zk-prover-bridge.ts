@@ -357,10 +357,13 @@ export class ProductionZKProverBridge implements ZKProverBridge, ZKVerifierBridg
       });
     }
 
-    const inlineData = artifact.inlineData ?? (await this.loadArtifactData(artifact));
-    const computedIntegrity = await computeZKArtifactIntegrity(inlineData);
+    const artifactData = artifact.inlineData ?? (await this.loadArtifactData(artifact));
+    const computedIntegrity = await computeZKArtifactIntegrity(artifactData);
+    const artifactBytes = typeof artifactData === "string"
+      ? new TextEncoder().encode(artifactData).byteLength
+      : artifactData.byteLength;
 
-    if (artifact.bytes !== undefined && new TextEncoder().encode(inlineData).byteLength !== artifact.bytes) {
+    if (artifact.bytes !== undefined && artifactBytes !== artifact.bytes) {
       throw new AdapterOperationError(`Artifact byte length mismatch for ${artifact.role}`, {
         adapter: "zk",
         operation: "validate_artifact_integrity",
@@ -387,13 +390,13 @@ export class ProductionZKProverBridge implements ZKProverBridge, ZKVerifierBridg
     }
   }
 
-  private async loadArtifactData(artifact: ZKArtifactDescriptor): Promise<string> {
+  private async loadArtifactData(artifact: ZKArtifactDescriptor): Promise<string | Uint8Array> {
     const data = await this.adapter.loadArtifact?.(artifact);
     if (typeof data === "string") {
       return data;
     }
     if (data instanceof Uint8Array) {
-      return new TextDecoder().decode(data);
+      return data;
     }
 
     throw new AdapterOperationError(`Artifact ${artifact.uri} is not locally resolvable`, {

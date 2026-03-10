@@ -11,7 +11,7 @@ import { InMemoryZKProofRepository } from "../src/infrastructure/zk/in-memory-zk
 import { InMemoryZKVerificationReceiptRepository } from "../src/infrastructure/zk/in-memory-zk-verification-receipt-repository";
 import { ProductionZKProverBridge } from "../src/infrastructure/zk/production-zk-prover-bridge";
 import { RemoteHttpZKProverAdapterSkeleton } from "../src/infrastructure/zk/remote-http-zk-prover-adapter-skeleton";
-import { computeZKManifestIntegrity } from "../src/domain/zk-bridge";
+import { computeZKArtifactIntegrity, computeZKManifestIntegrity } from "../src/domain/zk-bridge";
 
 describe("ProductionZKProverBridge", () => {
   test("generates bridge metadata, manifests, and verification receipts", async () => {
@@ -161,6 +161,65 @@ describe("ProductionZKProverBridge", () => {
     ).rejects.toThrow(AdapterOperationError);
   });
 
+  test("accepts binary artifact payloads without text-decoding integrity drift", async () => {
+    const manifestRepository = new InMemoryZKArtifactManifestRepository();
+    const binaryWasm = new Uint8Array([0xff, 0x00, 0x7f, 0x80, 0x41, 0x42]);
+    const manifest = createDefaultZKArtifactManifest("identity");
+    const binaryWasmIntegrity = await computeZKArtifactIntegrity(binaryWasm);
+    const binaryManifest = {
+      ...manifest,
+      artifacts: manifest.artifacts.map((artifact, index) => index === 0
+        ? {
+            ...artifact,
+            source: "remote" as const,
+            bytes: binaryWasm.byteLength,
+            integrity: binaryWasmIntegrity,
+            inlineData: undefined,
+          }
+        : artifact),
+    };
+    await manifestRepository.save({
+      ...binaryManifest,
+      manifestIntegrity: await computeZKManifestIntegrity({
+        id: binaryManifest.id,
+        schemaVersion: binaryManifest.schemaVersion,
+        proofType: binaryManifest.proofType,
+        manifestVersion: binaryManifest.manifestVersion,
+        runtimeVersion: binaryManifest.runtimeVersion,
+        integrityAlgorithm: binaryManifest.integrityAlgorithm,
+        circuit: binaryManifest.circuit,
+        artifacts: binaryManifest.artifacts,
+        createdAt: binaryManifest.createdAt,
+        publishedAt: binaryManifest.publishedAt,
+        artifactCount: binaryManifest.artifactCount,
+      }),
+    });
+
+    const bridge = new ProductionZKProverBridge(
+      new BinaryArtifactDeterministicAdapter(binaryWasm),
+      manifestRepository,
+    );
+
+    await expect(
+      bridge.generate(
+        {
+          type: "identity",
+          proverId: "participant-binary",
+          challenge: "binary-challenge",
+          publicInputs: {
+            participantId: "participant-binary",
+            isHuman: true,
+          },
+          createdAt: 1_710_000_000_000,
+        },
+        { witness: true },
+      ),
+    ).resolves.toMatchObject({
+      type: "identity",
+      proverId: "participant-binary",
+    });
+  });
+
   test("reports degraded remote skeleton health until configured", async () => {
     const manifestRepository = new InMemoryZKArtifactManifestRepository();
     await manifestRepository.save(createDefaultZKArtifactManifest("reputation"));
@@ -288,3 +347,17 @@ describe("ProductionZKProverBridge", () => {
     expect(health.lastError?.details?.proofType).toBe("identity");
   });
 });
+
+class BinaryArtifactDeterministicAdapter extends DeterministicLocalZKProverAdapter {
+  constructor(private readonly binaryWasm: Uint8Array) {
+    super("appendix-c-binary");
+  }
+
+  override async loadArtifact(artifact: Parameters<DeterministicLocalZKProverAdapter["loadArtifact"]>[0]) {
+    if (artifact.role === "wasm") {
+      return new Uint8Array(this.binaryWasm);
+    }
+
+    return await super.loadArtifact(artifact);
+  }
+}

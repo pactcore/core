@@ -119,8 +119,14 @@ export async function hashZKBridgePayload(value: unknown): Promise<string> {
     .join("");
 }
 
-export async function computeZKArtifactIntegrity(inlineData: string): Promise<string> {
-  return `sha256:${await hashZKBridgePayload(inlineData)}`;
+export async function computeZKArtifactIntegrity(
+  artifactData: string | Uint8Array | ArrayBuffer,
+): Promise<string> {
+  const bytes = normalizeArtifactBytes(artifactData);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return `sha256:${Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 export async function computeZKManifestIntegrity(
@@ -131,6 +137,18 @@ export async function computeZKManifestIntegrity(
 
 function stableStringify(value: unknown): string {
   return JSON.stringify(normalizeValue(value));
+}
+
+function normalizeArtifactBytes(value: string | Uint8Array | ArrayBuffer): Uint8Array {
+  if (typeof value === "string") {
+    return new TextEncoder().encode(value);
+  }
+
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+
+  return new Uint8Array(value);
 }
 
 function normalizeValue(value: unknown): unknown {

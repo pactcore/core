@@ -78,7 +78,7 @@ function createArtifact(
     uri,
     version,
     integrityAlgorithm: DEFAULT_INTEGRITY_ALGORITHM,
-    integrity: `sha256:${computeBridgeDigest(inlineData)}`,
+    integrity: `sha256:${computeArtifactDigest(inlineData)}`,
     source: "inline",
     bytes: new TextEncoder().encode(inlineData).byteLength,
     inlineData,
@@ -92,6 +92,12 @@ function computeIntegrity(value: unknown): string {
 function computeBridgeDigest(value: unknown): string {
   return createHash("sha256")
     .update(stableStringify(value))
+    .digest("hex");
+}
+
+function computeArtifactDigest(value: string): string {
+  return createHash("sha256")
+    .update(new TextEncoder().encode(value))
     .digest("hex");
 }
 
