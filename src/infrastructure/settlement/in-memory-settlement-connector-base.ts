@@ -1,7 +1,9 @@
 import type {
   SettlementConnectorCircuitBreakerPolicy,
+  SettlementConnectorProfileSummary,
   SettlementConnectorFailure,
   SettlementConnectorHealth,
+  SettlementConnectorProviderProfile,
   SettlementConnectorRequest,
   SettlementConnectorResult,
   SettlementConnectorRetryPolicy,
@@ -10,21 +12,30 @@ import type {
 export interface InMemorySettlementConnectorOptions {
   retryPolicy?: Partial<SettlementConnectorRetryPolicy>;
   circuitBreaker?: Partial<SettlementConnectorCircuitBreakerPolicy>;
+  timeoutMs?: number;
+  providerProfile?: SettlementConnectorProviderProfile;
 }
 
 const DEFAULT_RETRY_POLICY: SettlementConnectorRetryPolicy = {
   maxRetries: 2,
   backoffMs: 10,
+  backoffStrategy: "linear",
 };
 
 const DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 5_000;
 
 export abstract class InMemorySettlementConnectorBase {
   private readonly processedResults = new Map<string, SettlementConnectorResult>();
+  private readonly requestFingerprints = new Map<string, string>();
+  private readonly inFlightResults = new Map<string, Promise<SettlementConnectorResult>>();
   private readonly externalReferences = new Set<string>();
   private readonly retryPolicy: SettlementConnectorRetryPolicy;
   private readonly circuitBreaker: SettlementConnectorCircuitBreakerPolicy;
   private readonly plannedFailures: string[] = [];
+  private readonly plannedDelaysMs: number[] = [];
+  private readonly timeoutMs: number;
+  private readonly profile?: SettlementConnectorProviderProfile;
   private consecutiveFailures = 0;
   private lastFailureAt?: number;
   private lastError?: string;
@@ -35,6 +46,8 @@ export abstract class InMemorySettlementConnectorBase {
     this.retryPolicy = {
       maxRetries: this.normalizeRetryCount(options.retryPolicy?.maxRetries),
       backoffMs: this.normalizeBackoffMs(options.retryPolicy?.backoffMs),
+      backoffStrategy: this.normalizeBackoffStrategy(options.retryPolicy?.backoffStrategy),
+      maxBackoffMs: this.normalizeMaxBackoffMs(options.retryPolicy?.maxBackoffMs),
     };
     this.circuitBreaker = {
       failureThreshold: this.normalizeFailureThreshold(
@@ -43,6 +56,10 @@ export abstract class InMemorySettlementConnectorBase {
       ),
       cooldownMs: this.normalizeCooldownMs(options.circuitBreaker?.cooldownMs),
     };
+    this.timeoutMs = this.normalizeTimeoutMs(options.timeoutMs ?? options.providerProfile?.timeoutMs);
+    this.profile = options.providerProfile
+      ? this.normalizeProviderProfile(options.providerProfile, this.timeoutMs)
+      : undefined;
   }
 
   getHealth(): SettlementConnectorHealth {
@@ -52,10 +69,12 @@ export abstract class InMemorySettlementConnectorBase {
       state: this.state,
       retryPolicy: { ...this.retryPolicy },
       circuitBreaker: { ...this.circuitBreaker },
+      timeoutMs: this.timeoutMs,
       consecutiveFailures: this.consecutiveFailures,
       lastFailureAt: this.lastFailureAt,
       lastError: this.lastError,
       lastFailure: this.lastFailure ? { ...this.lastFailure } : undefined,
+      profile: this.profile ? this.summarizeProfile(this.profile) : undefined,
     };
   }
 
@@ -78,15 +97,53 @@ export abstract class InMemorySettlementConnectorBase {
     }
   }
 
+  queueDelay(ms: number, count = 1): void {
+    if (!Number.isFinite(ms) || ms < 0) {
+      throw new Error(`invalid delayMs: ${ms}`);
+    }
+
+    const iterations = Number.isInteger(count) && count > 0 ? count : 1;
+    const normalizedDelayMs = Math.floor(ms);
+    for (let index = 0; index < iterations; index += 1) {
+      this.plannedDelaysMs.push(normalizedDelayMs);
+    }
+  }
+
   protected async executeWithResilience(
     input: SettlementConnectorRequest,
-    operation: () => SettlementConnectorResult,
+    operation: () => Promise<SettlementConnectorResult> | SettlementConnectorResult,
   ): Promise<SettlementConnectorResult> {
-    const existingResult = input.idempotencyKey
-      ? this.processedResults.get(input.idempotencyKey)
+    const normalizedIdempotencyKey = this.normalizeIdempotencyKey(input.idempotencyKey);
+    const request = normalizedIdempotencyKey
+      ? {
+          ...input,
+          idempotencyKey: normalizedIdempotencyKey,
+        }
+      : input;
+
+    if (normalizedIdempotencyKey) {
+      const requestFingerprint = this.createRequestFingerprint(request);
+      const existingFingerprint = this.requestFingerprints.get(normalizedIdempotencyKey);
+      if (existingFingerprint && existingFingerprint !== requestFingerprint) {
+        throw new Error(
+          `connector idempotency key reuse with different request: ${normalizedIdempotencyKey}`,
+        );
+      }
+      this.requestFingerprints.set(normalizedIdempotencyKey, requestFingerprint);
+    }
+
+    const existingResult = normalizedIdempotencyKey
+      ? this.processedResults.get(normalizedIdempotencyKey)
       : undefined;
     if (existingResult) {
       return this.cloneResult(existingResult);
+    }
+
+    const existingInFlight = normalizedIdempotencyKey
+      ? this.inFlightResults.get(normalizedIdempotencyKey)
+      : undefined;
+    if (existingInFlight) {
+      return this.cloneResult(await existingInFlight);
     }
 
     this.refreshCircuitBreakerState();
@@ -94,6 +151,53 @@ export abstract class InMemorySettlementConnectorBase {
       throw this.buildOpenCircuitError();
     }
 
+    const execution = this.runWithResilience(request, operation);
+
+    if (normalizedIdempotencyKey) {
+      this.inFlightResults.set(normalizedIdempotencyKey, execution);
+    }
+
+    try {
+      const result = await execution;
+      if (normalizedIdempotencyKey) {
+        this.processedResults.set(normalizedIdempotencyKey, this.cloneResult(result));
+      }
+      this.externalReferences.add(result.externalReference);
+      return this.cloneResult(result);
+    } finally {
+      if (normalizedIdempotencyKey) {
+        this.inFlightResults.delete(normalizedIdempotencyKey);
+      }
+    }
+  }
+
+  private cloneResult(result: SettlementConnectorResult): SettlementConnectorResult {
+    return {
+      ...result,
+      metadata: result.metadata ? { ...result.metadata } : undefined,
+    };
+  }
+
+  private refreshCircuitBreakerState(): void {
+    if (this.state !== "open" || this.lastFailureAt === undefined) {
+      return;
+    }
+
+    if (Date.now() - this.lastFailureAt >= this.circuitBreaker.cooldownMs) {
+      this.state = "half_open";
+    }
+  }
+
+  private buildOpenCircuitError(): Error {
+    return new Error(
+      this.lastError ? `circuit breaker open: ${this.lastError}` : "circuit breaker open",
+    );
+  }
+
+  private async runWithResilience(
+    input: SettlementConnectorRequest,
+    operation: () => Promise<SettlementConnectorResult> | SettlementConnectorResult,
+  ): Promise<SettlementConnectorResult> {
     const maxAttempts = this.state === "half_open" ? 1 : this.retryPolicy.maxRetries + 1;
     let attempt = 0;
 
@@ -101,21 +205,28 @@ export abstract class InMemorySettlementConnectorBase {
       attempt += 1;
 
       try {
-        const plannedFailure = this.plannedFailures.shift();
-        if (plannedFailure) {
-          throw new Error(plannedFailure);
+        const plannedDelayMs = this.plannedDelaysMs.shift();
+        if (plannedDelayMs && plannedDelayMs > 0) {
+          if (plannedDelayMs >= this.timeoutMs) {
+            await this.sleep(this.timeoutMs);
+            throw new Error(`connector attempt timed out after ${this.timeoutMs}ms`);
+          }
+
+          await this.sleep(plannedDelayMs);
         }
 
-        const result = operation();
+        const result = await this.withTimeout(async () => {
+          const plannedFailure = this.plannedFailures.shift();
+          if (plannedFailure) {
+            throw new Error(plannedFailure);
+          }
+
+          return await operation();
+        });
+
         this.consecutiveFailures = 0;
         this.state = "closed";
-
-        if (input.idempotencyKey) {
-          this.processedResults.set(input.idempotencyKey, this.cloneResult(result));
-        }
-        this.externalReferences.add(result.externalReference);
-
-        return this.cloneResult(result);
+        return result;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const failedAt = Date.now();
@@ -140,34 +251,29 @@ export abstract class InMemorySettlementConnectorBase {
           throw error instanceof Error ? error : new Error(message);
         }
 
-        await this.sleep(this.retryPolicy.backoffMs * attempt);
+        await this.sleep(this.calculateBackoffMs(attempt));
       }
     }
 
     throw new Error("connector execution failed");
   }
 
-  private cloneResult(result: SettlementConnectorResult): SettlementConnectorResult {
-    return {
-      ...result,
-      metadata: result.metadata ? { ...result.metadata } : undefined,
-    };
-  }
+  private async withTimeout<T>(operation: () => Promise<T>): Promise<T> {
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
-  private refreshCircuitBreakerState(): void {
-    if (this.state !== "open" || this.lastFailureAt === undefined) {
-      return;
+    try {
+      return await new Promise<T>((resolve, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error(`connector attempt timed out after ${this.timeoutMs}ms`));
+        }, this.timeoutMs);
+
+        void operation().then(resolve).catch(reject);
+      });
+    } finally {
+      if (timeoutHandle !== undefined) {
+        clearTimeout(timeoutHandle);
+      }
     }
-
-    if (Date.now() - this.lastFailureAt >= this.circuitBreaker.cooldownMs) {
-      this.state = "half_open";
-    }
-  }
-
-  private buildOpenCircuitError(): Error {
-    return new Error(
-      this.lastError ? `circuit breaker open: ${this.lastError}` : "circuit breaker open",
-    );
   }
 
   private sleep(ms: number): Promise<void> {
@@ -198,6 +304,30 @@ export abstract class InMemorySettlementConnectorBase {
     return Math.floor(value);
   }
 
+  private normalizeBackoffStrategy(
+    value: SettlementConnectorRetryPolicy["backoffStrategy"] | undefined,
+  ): NonNullable<SettlementConnectorRetryPolicy["backoffStrategy"]> {
+    if (value === undefined) {
+      return DEFAULT_RETRY_POLICY.backoffStrategy ?? "linear";
+    }
+
+    if (value !== "linear" && value !== "exponential") {
+      throw new Error(`invalid backoffStrategy: ${String(value)}`);
+    }
+
+    return value;
+  }
+
+  private normalizeMaxBackoffMs(value: number | undefined): number | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`invalid maxBackoffMs: ${value}`);
+    }
+    return Math.floor(value);
+  }
+
   private normalizeFailureThreshold(value: number | undefined, fallback: number): number {
     if (value === undefined) {
       return fallback;
@@ -216,5 +346,188 @@ export abstract class InMemorySettlementConnectorBase {
       throw new Error(`invalid cooldownMs: ${value}`);
     }
     return Math.floor(value);
+  }
+
+  private normalizeTimeoutMs(value: number | undefined): number {
+    if (value === undefined) {
+      return DEFAULT_TIMEOUT_MS;
+    }
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`invalid timeoutMs: ${value}`);
+    }
+    return Math.floor(value);
+  }
+
+  private normalizeProviderProfile(
+    profile: SettlementConnectorProviderProfile,
+    defaultTimeoutMs: number,
+  ): SettlementConnectorProviderProfile {
+    const id = this.normalizeRequiredString(profile.id, "providerProfile.id");
+    const providerId = this.normalizeRequiredString(profile.providerId, "providerProfile.providerId");
+    const displayName = this.normalizeOptionalString(profile.displayName, "providerProfile.displayName");
+    const endpoint = this.normalizeOptionalString(profile.endpoint, "providerProfile.endpoint");
+
+    const credentialType = profile.credentialSchema?.type;
+    if (
+      credentialType !== "none" &&
+      credentialType !== "api_key" &&
+      credentialType !== "bearer" &&
+      credentialType !== "basic" &&
+      credentialType !== "oauth2" &&
+      credentialType !== "service_account"
+    ) {
+      throw new Error(`invalid providerProfile.credentialSchema.type: ${String(credentialType)}`);
+    }
+
+    const credentialFields = profile.credentialSchema.fields;
+    if (!Array.isArray(credentialFields)) {
+      throw new Error("providerProfile.credentialSchema.fields must be an array");
+    }
+
+    const normalizedFields = credentialFields.map((field, index) => ({
+      key: this.normalizeRequiredString(
+        field?.key,
+        `providerProfile.credentialSchema.fields[${index}].key`,
+      ),
+      required: field?.required !== false,
+      secret: field?.secret === true,
+    }));
+
+    const uniqueFieldKeys = new Set(normalizedFields.map((field) => field.key));
+    if (uniqueFieldKeys.size !== normalizedFields.length) {
+      throw new Error("providerProfile.credentialSchema.fields contains duplicate keys");
+    }
+
+    const credentials = this.normalizeCredentials(profile.credentials);
+    for (const field of normalizedFields) {
+      if (field.required && credentials[field.key] === undefined) {
+        throw new Error(`missing provider credential field: ${field.key}`);
+      }
+    }
+
+    for (const key of Object.keys(credentials)) {
+      if (!uniqueFieldKeys.has(key)) {
+        throw new Error(`unsupported provider credential field: ${key}`);
+      }
+    }
+
+    const metadata = this.normalizeMetadata(profile.metadata);
+
+    return {
+      id,
+      providerId,
+      displayName,
+      endpoint,
+      timeoutMs: this.normalizeTimeoutMs(profile.timeoutMs ?? defaultTimeoutMs),
+      credentialSchema: {
+        type: credentialType,
+        fields: normalizedFields,
+      },
+      credentials,
+      metadata,
+    };
+  }
+
+  private summarizeProfile(profile: SettlementConnectorProviderProfile): SettlementConnectorProfileSummary {
+    return {
+      profileId: profile.id,
+      providerId: profile.providerId,
+      displayName: profile.displayName,
+      endpoint: profile.endpoint,
+      credentialType: profile.credentialSchema.type,
+      configuredCredentialFields: Object.keys(profile.credentials).sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    };
+  }
+
+  private normalizeCredentials(
+    value: Record<string, string> | undefined,
+  ): Record<string, string> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("providerProfile.credentials must be an object");
+    }
+
+    const entries = Object.entries(value).map(([key, credentialValue]) => [
+      this.normalizeRequiredString(key, "providerProfile.credentials.key"),
+      this.normalizeRequiredString(credentialValue, `providerProfile.credentials.${key}`),
+    ]);
+
+    return Object.fromEntries(entries);
+  }
+
+  private normalizeMetadata(
+    value: Record<string, string> | undefined,
+  ): Record<string, string> | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("providerProfile.metadata must be an object");
+    }
+
+    return Object.fromEntries(
+      Object.entries(value).map(([key, metadataValue]) => [
+        this.normalizeRequiredString(key, "providerProfile.metadata.key"),
+        this.normalizeRequiredString(metadataValue, `providerProfile.metadata.${key}`),
+      ]),
+    );
+  }
+
+  private normalizeRequiredString(value: string | undefined, fieldName: string): string {
+    if (typeof value !== "string") {
+      throw new Error(`${fieldName} is required`);
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error(`${fieldName} is required`);
+    }
+
+    return trimmed;
+  }
+
+  private normalizeOptionalString(value: string | undefined, fieldName: string): string | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    return this.normalizeRequiredString(value, fieldName);
+  }
+
+  private normalizeIdempotencyKey(value: string | undefined): string | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    return this.normalizeRequiredString(value, "connector idempotencyKey");
+  }
+
+  private createRequestFingerprint(input: SettlementConnectorRequest): string {
+    return JSON.stringify({
+      settlementId: input.settlementId,
+      recordId: input.recordId,
+      legId: input.legId,
+      assetId: input.assetId,
+      payerId: input.payerId,
+      payeeId: input.payeeId,
+      amount: input.amount,
+      unit: input.unit,
+    });
+  }
+
+  private calculateBackoffMs(attempt: number): number {
+    const baseDelay = this.retryPolicy.backoffMs;
+    const computedDelay =
+      this.retryPolicy.backoffStrategy === "exponential"
+        ? baseDelay * 2 ** Math.max(0, attempt - 1)
+        : baseDelay * attempt;
+
+    const maxBackoffMs = this.retryPolicy.maxBackoffMs;
+    if (maxBackoffMs === undefined) {
+      return computedDelay;
+    }
+
+    return Math.min(computedDelay, maxBackoffMs);
   }
 }

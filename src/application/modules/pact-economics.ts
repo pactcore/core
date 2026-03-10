@@ -569,6 +569,7 @@ export class PactEconomics {
           failureThreshold: 0,
           cooldownMs: 0,
         },
+        timeoutMs: 0,
         consecutiveFailures: 1,
         lastFailureAt: Date.now(),
         lastError: `missing connector: ${connectorName}`,

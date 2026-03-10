@@ -24,9 +24,50 @@ export interface SettlementConnectorResult {
   metadata?: Record<string, string>;
 }
 
+export type SettlementConnectorCredentialType =
+  | "none"
+  | "api_key"
+  | "bearer"
+  | "basic"
+  | "oauth2"
+  | "service_account";
+
+export interface SettlementConnectorCredentialFieldSchema {
+  key: string;
+  required?: boolean;
+  secret?: boolean;
+}
+
+export interface SettlementConnectorCredentialSchema {
+  type: SettlementConnectorCredentialType;
+  fields: SettlementConnectorCredentialFieldSchema[];
+}
+
+export interface SettlementConnectorProviderProfile {
+  id: string;
+  providerId: string;
+  displayName?: string;
+  endpoint?: string;
+  timeoutMs?: number;
+  credentialSchema: SettlementConnectorCredentialSchema;
+  credentials: Record<string, string>;
+  metadata?: Record<string, string>;
+}
+
+export interface SettlementConnectorProfileSummary {
+  profileId: string;
+  providerId: string;
+  displayName?: string;
+  endpoint?: string;
+  credentialType: SettlementConnectorCredentialType;
+  configuredCredentialFields: string[];
+}
+
 export interface SettlementConnectorRetryPolicy {
   maxRetries: number;
   backoffMs: number;
+  backoffStrategy?: "linear" | "exponential";
+  maxBackoffMs?: number;
 }
 
 export interface SettlementConnectorCircuitBreakerPolicy {
@@ -49,10 +90,12 @@ export interface SettlementConnectorHealth {
   state: SettlementConnectorHealthState;
   retryPolicy: SettlementConnectorRetryPolicy;
   circuitBreaker: SettlementConnectorCircuitBreakerPolicy;
+  timeoutMs: number;
   consecutiveFailures: number;
   lastFailureAt?: number;
   lastError?: string;
   lastFailure?: SettlementConnectorFailure;
+  profile?: SettlementConnectorProfileSummary;
 }
 
 export interface ManagedSettlementConnector {

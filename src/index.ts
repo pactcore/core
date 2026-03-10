@@ -354,9 +354,14 @@ export { PactEcosystem } from "./application/modules/pact-ecosystem";
 export { PactReconciliation } from "./application/modules/pact-reconciliation";
 export type {
   ManagedSettlementConnector,
+  SettlementConnectorCredentialFieldSchema,
+  SettlementConnectorCredentialSchema,
+  SettlementConnectorCredentialType,
   SettlementConnectorFailure,
   SettlementConnectorHealth,
   SettlementConnectorHealthState,
+  SettlementConnectorProfileSummary,
+  SettlementConnectorProviderProfile,
   SettlementConnectorRequest,
   SettlementConnectorResult,
   SettlementConnectorRetryPolicy,
