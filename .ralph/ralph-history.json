@@ -2043,15 +2043,31 @@
       "errors": [
         "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da4a77d5c7aebed-SJC"
       ]
+    },
+    {
+      "iteration": 112,
+      "startedAt": "2026-03-10T19:16:32.752Z",
+      "endedAt": "2026-03-10T19:17:19.272Z",
+      "durationMs": 46203,
+      "agent": "codex",
+      "model": "gpt-5.4",
+      "toolsUsed": {},
+      "filesModified": [],
+      "exitCode": 1,
+      "completionDetected": false,
+      "errors": [
+        "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error decoding response body)",
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da4a8a84863dac8-SJC"
+      ]
     }
   ],
-  "totalDurationMs": 5087623,
+  "totalDurationMs": 5133826,
   "struggleIndicators": {
     "repeatedErrors": {
       "lastError: missingFields.length > 0": 1,
       "+      lastError: missingFields.length > 0": 1,
-      "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/respons": 110,
-      "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error de": 6,
+      "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/respons": 111,
+      "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error de": 7,
       "error: adapterError.toDescriptor(),": 1,
       "169:            error: this.descriptorFromFailedResult(enriched),": 1,
       "183:          error: enriched.status === \"failed\" ? this.descriptorFromFailedResult(enriched) : unde": 1,
@@ -2063,7 +2079,7 @@
       "The hardening slice is implemented, targeted tests and full suite passed, and the commit was created": 1,
       "I found two health tests already present, so I’m extending that coverage instead of duplicating it: ": 1
     },
-    "noProgressIterations": 0,
-    "shortIterations": 4
+    "noProgressIterations": 1,
+    "shortIterations": 0
   }
 }
