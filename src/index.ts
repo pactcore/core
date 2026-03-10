@@ -572,6 +572,7 @@ export { InMemoryZKProofRepository } from "./infrastructure/zk/in-memory-zk-proo
 export { InMemoryZKArtifactManifestRepository } from "./infrastructure/zk/in-memory-zk-artifact-manifest-repository";
 export { InMemoryZKVerificationReceiptRepository } from "./infrastructure/zk/in-memory-zk-verification-receipt-repository";
 export { DeterministicLocalZKProverAdapter } from "./infrastructure/zk/deterministic-local-zk-prover-adapter";
+export { RemoteHttpZKProverAdapter } from "./infrastructure/zk/remote-http-zk-prover-adapter";
 export { RemoteHttpZKProverAdapterSkeleton } from "./infrastructure/zk/remote-http-zk-prover-adapter-skeleton";
 export { createDefaultZKArtifactManifest, createDefaultZKArtifactManifests } from "./infrastructure/zk/default-zk-artifact-manifest-factory";
 export { MockExternalZKProverAdapter } from "./infrastructure/zk/mock-external-zk-prover-adapter";

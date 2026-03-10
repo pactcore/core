@@ -1,14 +1,10 @@
-import type { RemoteHttpZKProverAdapterSkeletonOptions } from "./remote-http-zk-prover-adapter-skeleton";
+import {
+  DEFAULT_REMOTE_ZK_REQUIRED_CREDENTIAL_FIELDS,
+  type RemoteHttpZKProverAdapterOptions,
+  type RemoteZKCredentialType,
+} from "./remote-zk-prover-options";
 
 type EnvLike = Record<string, string | undefined>;
-
-type RemoteZKCredentialType =
-  | "none"
-  | "api_key"
-  | "bearer"
-  | "basic"
-  | "oauth2"
-  | "service_account";
 
 interface RemoteZKProverProfileInput {
   endpoint?: string;
@@ -16,21 +12,13 @@ interface RemoteZKProverProfileInput {
   credentialType?: RemoteZKCredentialType;
   configuredCredentialFields?: string[];
   requiredCredentialFields?: string[];
+  timeoutMs?: number;
   credentials?: Record<string, string>;
 }
 
-const DEFAULT_REQUIRED_CREDENTIAL_FIELDS: Record<RemoteZKCredentialType, string[]> = {
-  none: [],
-  api_key: ["apiKey"],
-  bearer: ["token"],
-  basic: ["username", "password"],
-  oauth2: ["accessToken"],
-  service_account: ["accessToken"],
-};
-
 export function loadRemoteZKProverAdapterOptionsFromEnv(
   env: EnvLike,
-): RemoteHttpZKProverAdapterSkeletonOptions {
+): RemoteHttpZKProverAdapterOptions {
   const jsonKey = "PACT_ZK_REMOTE_PROFILE_JSON";
   const jsonValue = normalizeOptionalString(env[jsonKey]);
   const envProfile = loadEnvRemoteZKProfileInput(env);
@@ -44,7 +32,7 @@ export function loadRemoteZKProverAdapterOptionsFromEnv(
 
 function createOptionsFromProfile(
   profile: RemoteZKProverProfileInput,
-): RemoteHttpZKProverAdapterSkeletonOptions {
+): RemoteHttpZKProverAdapterOptions {
   const credentialType = profile.credentialType ?? "api_key";
   const configuredCredentialFields = new Set<string>([
     ...(profile.configuredCredentialFields ?? []),
@@ -54,8 +42,11 @@ function createOptionsFromProfile(
   return {
     endpoint: normalizeOptionalString(profile.endpoint),
     providerId: normalizeOptionalString(profile.providerId),
+    credentialType,
+    credentials: profile.credentials ? { ...profile.credentials } : undefined,
     configuredCredentialFields: [...configuredCredentialFields].sort((left, right) => left.localeCompare(right)),
-    requiredCredentialFields: [...(profile.requiredCredentialFields ?? DEFAULT_REQUIRED_CREDENTIAL_FIELDS[credentialType])],
+    requiredCredentialFields: [...(profile.requiredCredentialFields ?? DEFAULT_REMOTE_ZK_REQUIRED_CREDENTIAL_FIELDS[credentialType])],
+    timeoutMs: profile.timeoutMs,
   };
 }
 
@@ -78,6 +69,7 @@ function loadEnvRemoteZKProfileInput(env: EnvLike): RemoteZKProverProfileInput {
       env.PACT_ZK_REMOTE_REQUIRED_CREDENTIAL_FIELDS_JSON,
       "PACT_ZK_REMOTE_REQUIRED_CREDENTIAL_FIELDS_JSON",
     ),
+    timeoutMs: parseOptionalInteger(env.PACT_ZK_REMOTE_TIMEOUT_MS, "PACT_ZK_REMOTE_TIMEOUT_MS"),
     credentials,
   };
 }
@@ -95,6 +87,7 @@ function mergeRemoteZKProverProfileInputs(
       ...(overlay.configuredCredentialFields ?? []),
     ])].sort((left, right) => left.localeCompare(right)),
     requiredCredentialFields: overlay.requiredCredentialFields ?? base.requiredCredentialFields,
+    timeoutMs: overlay.timeoutMs ?? base.timeoutMs,
     credentials: {
       ...(base.credentials ?? {}),
       ...(overlay.credentials ?? {}),
@@ -121,6 +114,7 @@ function parseProfileJson(value: string, label: string): RemoteZKProverProfileIn
     requiredCredentialFields: profile.requiredCredentialFields
       ? parseFieldList(profile.requiredCredentialFields, `${label}.requiredCredentialFields`)
       : undefined,
+    timeoutMs: asNumber(profile.timeoutMs),
     credentials: parseOptionalStringRecord(profile.credentials, `${label}.credentials`),
   };
 }
@@ -210,6 +204,10 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function normalizeRequiredString(value: string | undefined, label: string): string {
   if (typeof value !== "string") {
     throw new Error(`${label} is required`);
@@ -230,4 +228,18 @@ function normalizeOptionalString(value: string | undefined): string | undefined 
 
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function parseOptionalInteger(value: string | undefined, label: string): number | undefined {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(normalized, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+
+  return parsed;
 }

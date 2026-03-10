@@ -2060,13 +2060,38 @@
         "tests/pact-data-provenance.test.ts:102:  test(\"integrity verification fails with wrong hash\", async () => {",
         "tests/pact-data-provenance.test.ts:112:  test(\"integrity verification fails when no proof registered\", async () => {"
       ]
+    },
+    {
+      "iteration": 114,
+      "startedAt": "2026-03-10T19:24:59.750Z",
+      "endedAt": "2026-03-10T19:27:02.819Z",
+      "durationMs": 122697,
+      "agent": "codex",
+      "model": "gpt-5.4",
+      "toolsUsed": {},
+      "filesModified": [
+        "src/application/container.ts",
+        "src/index.ts",
+        "src/infrastructure/zk/remote-http-zk-prover-adapter-skeleton.ts",
+        "src/infrastructure/zk/remote-zk-prover-config.ts",
+        "tests/live-adapter-factory.test.ts",
+        "src/infrastructure/zk/remote-http-zk-prover-adapter.ts",
+        "src/infrastructure/zk/remote-zk-prover-options.ts",
+        "tests/live-onchain-container-wiring.test.ts"
+      ],
+      "exitCode": 1,
+      "completionDetected": false,
+      "errors": [
+        "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error decoding response body)",
+        "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/responses, cf-ray: 9da4b6e71c252402-SJC"
+      ]
     }
   ],
-  "totalDurationMs": 5552491,
+  "totalDurationMs": 5675188,
   "struggleIndicators": {
     "repeatedErrors": {
-      "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error de": 5,
-      "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/respons": 20,
+      "Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error de": 6,
+      "ERROR: unexpected status 502 Bad Gateway: error code: 502, url: https://cc.cygnus.ink/openai/respons": 21,
       "I added focused coverage in [contract-bridge.test.ts](/root/.openclaw/workspace/pact-network-core-bu": 1,
       "+function isNonceSyncFallbackError(error: unknown): boolean {": 1,
       "lastError: error.toDescriptor(),": 1,

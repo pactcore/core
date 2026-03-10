@@ -48,8 +48,10 @@ import { InMemoryZKProofRepository } from "../infrastructure/zk/in-memory-zk-pro
 import { InMemoryZKArtifactManifestRepository } from "../infrastructure/zk/in-memory-zk-artifact-manifest-repository";
 import { InMemoryZKVerificationReceiptRepository } from "../infrastructure/zk/in-memory-zk-verification-receipt-repository";
 import { DeterministicLocalZKProverAdapter } from "../infrastructure/zk/deterministic-local-zk-prover-adapter";
+import { RemoteHttpZKProverAdapter } from "../infrastructure/zk/remote-http-zk-prover-adapter";
 import { RemoteHttpZKProverAdapterSkeleton } from "../infrastructure/zk/remote-http-zk-prover-adapter-skeleton";
 import { loadRemoteZKProverAdapterOptionsFromEnv } from "../infrastructure/zk/remote-zk-prover-config";
+import { isRemoteZKProverAdapterConfigured } from "../infrastructure/zk/remote-zk-prover-options";
 import { ProductionZKProverBridge } from "../infrastructure/zk/production-zk-prover-bridge";
 import { createDefaultZKArtifactManifests } from "../infrastructure/zk/default-zk-artifact-manifest-factory";
 import { InMemoryProvenanceGraph } from "../infrastructure/data/in-memory-provenance-graph";
@@ -144,6 +146,7 @@ export interface PactContainerEnvironment {
   PACT_ZK_REMOTE_PROVIDER_ID?: string;
   PACT_ZK_REMOTE_CREDENTIAL_TYPE?: string;
   PACT_ZK_REMOTE_REQUIRED_CREDENTIAL_FIELDS_JSON?: string;
+  PACT_ZK_REMOTE_TIMEOUT_MS?: string;
   PACT_ZK_REMOTE_API_KEY?: string;
   [key: `PACT_ZK_REMOTE_CREDENTIAL_${string}`]: string | undefined;
   PACT_EVM_RPC_URL?: string;
@@ -193,6 +196,7 @@ export interface CreateContainerOptions {
   onchainFinalityProvider?: OnchainFinalityProvider;
   onchainRpcProvider?: RpcProvider;
   onchainSigner?: TransactionSigner;
+  zkRemoteFetch?: typeof fetch;
 }
 
 export function createContainer(
@@ -290,11 +294,18 @@ export function createContainer(
       void manifestRepository.save(manifest);
     }
 
+    const remoteAdapterOptions = loadRemoteZKProverAdapterOptionsFromEnv(env as Record<string, string | undefined>);
     const adapter = zkProverMode === "bridge-remote"
-      ? new RemoteHttpZKProverAdapterSkeleton({
-          adapterName: zkAdapterName,
-          ...loadRemoteZKProverAdapterOptionsFromEnv(env as Record<string, string | undefined>),
-        })
+      ? isRemoteZKProverAdapterConfigured(remoteAdapterOptions)
+        ? new RemoteHttpZKProverAdapter({
+            adapterName: zkAdapterName,
+            fetchImpl: options.zkRemoteFetch,
+            ...remoteAdapterOptions,
+          })
+        : new RemoteHttpZKProverAdapterSkeleton({
+            adapterName: zkAdapterName,
+            ...remoteAdapterOptions,
+          })
       : new DeterministicLocalZKProverAdapter({
           adapterName: zkAdapterName,
         });
