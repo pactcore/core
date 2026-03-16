@@ -21,12 +21,26 @@ export interface ValidationConfig {
   humanJury: VotingLayerConfig;
 }
 
+export type EscalationReason = "score_below_threshold" | "insufficient_votes" | "disabled";
+
+export interface EscalationMetadata {
+  from: ValidationLayer;
+  to: ValidationLayer;
+  reason: EscalationReason;
+  score?: number;
+  threshold?: number;
+  votes?: number;
+  requiredVotes?: number;
+}
+
 export interface ValidationStepResult {
   layer: ValidationLayer;
   executed: boolean;
   passed: boolean;
   score: number;
   votes: number;
+  /** Set when this layer was reached due to escalation from a prior layer. */
+  escalatedFrom?: ValidationLayer;
 }
 
 export interface ValidationOutcome {
@@ -34,6 +48,7 @@ export interface ValidationOutcome {
   terminalLayer: ValidationLayer | null;
   steps: ValidationStepResult[];
   validatorIds: string[];
+  escalations: EscalationMetadata[];
   reason?: string;
 }
 
@@ -51,6 +66,7 @@ export class ThreeLayerValidationPipeline {
 
   evaluate(evidence: ValidationEvidence): ValidationOutcome {
     const steps: ValidationStepResult[] = [];
+    const escalations: EscalationMetadata[] = [];
 
     const autoStep: ValidationStepResult = {
       layer: "AutoAI",
@@ -72,15 +88,35 @@ export class ThreeLayerValidationPipeline {
         terminalLayer: "AutoAI",
         steps,
         validatorIds: [],
+        escalations,
       };
     }
 
+    // Determine why we escalated from AutoAI
+    if (this.config.autoAI.enabled) {
+      escalations.push({
+        from: "AutoAI",
+        to: "CommitteeReview",
+        reason: "score_below_threshold",
+        score: evidence.autoAIScore,
+        threshold: this.config.autoAI.passThreshold,
+      });
+    } else {
+      escalations.push({
+        from: "AutoAI",
+        to: "CommitteeReview",
+        reason: "disabled",
+      });
+    }
+
     const committeeVotes = evidence.committeeVotes ?? evidence.agentVotes;
+    const committeeConfig = this.resolveCommitteeReviewConfig();
     const committeeStep = this.evaluateVotingLayer(
       "CommitteeReview",
       committeeVotes,
-      this.resolveCommitteeReviewConfig(),
+      committeeConfig,
     );
+    committeeStep.escalatedFrom = "AutoAI";
     steps.push(committeeStep);
 
     if (committeeStep.executed && committeeStep.passed) {
@@ -89,7 +125,33 @@ export class ThreeLayerValidationPipeline {
         terminalLayer: "CommitteeReview",
         steps,
         validatorIds: committeeVotes.map((vote) => vote.participantId),
+        escalations,
       };
+    }
+
+    // Determine why we escalated from CommitteeReview
+    if (!committeeConfig.enabled) {
+      escalations.push({
+        from: "CommitteeReview",
+        to: "HumanJury",
+        reason: "disabled",
+      });
+    } else if (committeeVotes.length < committeeConfig.requiredParticipants) {
+      escalations.push({
+        from: "CommitteeReview",
+        to: "HumanJury",
+        reason: "insufficient_votes",
+        votes: committeeVotes.length,
+        requiredVotes: committeeConfig.requiredParticipants,
+      });
+    } else {
+      escalations.push({
+        from: "CommitteeReview",
+        to: "HumanJury",
+        reason: "score_below_threshold",
+        score: committeeStep.score,
+        threshold: committeeConfig.passThreshold,
+      });
     }
 
     const humanStep = this.evaluateVotingLayer(
@@ -97,6 +159,7 @@ export class ThreeLayerValidationPipeline {
       evidence.humanVotes,
       this.config.humanJury,
     );
+    humanStep.escalatedFrom = "CommitteeReview";
     steps.push(humanStep);
 
     if (humanStep.executed && humanStep.passed) {
@@ -105,6 +168,7 @@ export class ThreeLayerValidationPipeline {
         terminalLayer: "HumanJury",
         steps,
         validatorIds: evidence.humanVotes.map((vote) => vote.participantId),
+        escalations,
       };
     }
 
@@ -114,6 +178,7 @@ export class ThreeLayerValidationPipeline {
       terminalLayer: humanStep.executed ? "HumanJury" : committeeStep.executed ? "CommitteeReview" : null,
       steps,
       validatorIds: [],
+      escalations,
       reason,
     };
   }

@@ -1875,6 +1875,70 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
     return c.json(await container.pactDisputes.resolveDispute(c.req.param("id")));
   });
 
+  // ── Committee routes ───────────────────────────────────────────────────────
+  app.post("/committee/validators", async (c) => {
+    const body = await c.req.json();
+    const validatorId = getRequiredStringField(body, "validatorId");
+    const stakeCents = getRequiredNumberField(body, "stakeCents");
+    const settlementRecipientId = body.settlementRecipientId as string | undefined;
+    return c.json(
+      await container.pactCommittee.stakeValidator({ validatorId, stakeCents, settlementRecipientId }),
+      201,
+    );
+  });
+
+  app.get("/committee/validators", async (c) => {
+    return c.json(await container.pactCommittee.listValidatorAccounts());
+  });
+
+  app.get("/committee/validators/:id", async (c) => {
+    const account = await container.pactCommittee.getValidatorAccount(c.req.param("id"));
+    if (!account) {
+      return c.json({ error: "NotFound", message: `Validator account ${c.req.param("id")} not found` }, 404);
+    }
+    return c.json(account);
+  });
+
+  app.post("/committee/configure", async (c) => {
+    const body = await c.req.json();
+    const missionId = getRequiredStringField(body, "missionId");
+    return c.json(
+      await container.pactCommittee.configureCommittee({ missionId, ...body }),
+      201,
+    );
+  });
+
+  app.post("/committee/vote", async (c) => {
+    const body = await c.req.json();
+    const missionId = getRequiredStringField(body, "missionId");
+    const validatorId = getRequiredStringField(body, "validatorId");
+    const decision = body.decision as "approve" | "reject";
+    if (decision !== "approve" && decision !== "reject") {
+      throw new HTTPException(400, { message: "decision must be 'approve' or 'reject'" });
+    }
+    const reasoning = getRequiredStringField(body, "reasoning");
+    return c.json(
+      await container.pactCommittee.castVote({ missionId, validatorId, decision, reasoning }),
+    );
+  });
+
+  app.get("/committee/:missionId", async (c) => {
+    const review = await container.pactCommittee.getCommittee(c.req.param("missionId"));
+    if (!review) {
+      return c.json({ error: "NotFound", message: `Committee not found for mission ${c.req.param("missionId")}` }, 404);
+    }
+    return c.json(review);
+  });
+
+  app.post("/committee/:missionId/finalize", async (c) => {
+    return c.json(await container.pactCommittee.finalizeCommittee(c.req.param("missionId")));
+  });
+
+  app.post("/committee/:missionId/appeal", async (c) => {
+    await container.pactCommittee.recordAppealOutcome(c.req.param("missionId"));
+    return c.json({ recorded: true });
+  });
+
   app.onError((error, c) => {
     if (error instanceof HTTPException) {
       return error.getResponse();
@@ -2144,6 +2208,21 @@ function getRequiredNumberField(body: unknown, fieldName: string): number {
   if (typeof candidate !== "number" || !Number.isFinite(candidate)) {
     throw new HTTPException(400, {
       message: `${fieldName} must be a finite number`,
+    });
+  }
+
+  return candidate;
+}
+
+function getRequiredStringField(body: unknown, fieldName: string): string {
+  if (!body || typeof body !== "object") {
+    throw new HTTPException(400, { message: `${fieldName} is required` });
+  }
+
+  const candidate = (body as Record<string, unknown>)[fieldName];
+  if (typeof candidate !== "string" || candidate.trim() === "") {
+    throw new HTTPException(400, {
+      message: `${fieldName} must be a non-empty string`,
     });
   }
 
