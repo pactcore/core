@@ -5,6 +5,8 @@ import type {
   CommitteeConfig,
   CommitteeDecision,
   CommitteeOutcome,
+  CommitteeSelectionAudit,
+  CommitteeSelectionAuditEntry,
   CommitteeVote,
   ValidatorAccount,
 } from "../../domain/dispute-resolution";
@@ -51,6 +53,7 @@ export interface CommitteeReview {
   votes: CommitteeVote[];
   status: CommitteeReviewStatus;
   outcome?: CommitteeOutcome;
+  selectionAudit: CommitteeSelectionAudit;
   optParamsHash?: string;
   attestationCount: number;
   createdAt: number;
@@ -115,6 +118,8 @@ export class PactCommittee {
       consecutiveDisagreements: current?.consecutiveDisagreements ?? 0,
       totalDisagreements: current?.totalDisagreements ?? 0,
       totalSlashAmountCents: current?.totalSlashAmountCents ?? 0,
+      appealOutcomes: current?.appealOutcomes ?? 0,
+      noShowCount: current?.noShowCount ?? 0,
       stakedAt: current?.stakedAt ?? timestamp,
       lastUpdatedAt: timestamp,
       unstakeRequestedAt: undefined,
@@ -171,12 +176,25 @@ export class PactCommittee {
       throw new Error(`committee attestation count ${attestationCount} is below required ${config.requiredAttestations}`);
     }
 
-    const validators = this.selectCommitteeValidators(config);
+    const { selected: validators, candidateCount } = this.selectCommitteeValidators(config);
     if (validators.length < config.committeeSize) {
       throw new Error(`insufficient eligible validators for committee size ${config.committeeSize}`);
     }
 
     const createdAt = this.now();
+    const selectionAudit: CommitteeSelectionAudit = {
+      selectedAt: createdAt,
+      candidateCount,
+      entries: validators.map((v): CommitteeSelectionAuditEntry => ({
+        validatorId: v.validatorId,
+        reputationAtSelection: v.reputation,
+        stakeAtSelection: v.stakeCents,
+        weightAtSelection: this.computeValidatorWeight(v),
+        appealOutcomesAtSelection: v.appealOutcomes,
+        noShowCountAtSelection: v.noShowCount,
+      })),
+    };
+
     const review: CommitteeReview = {
       id: generateId("committee"),
       missionId: input.missionId,
@@ -184,6 +202,7 @@ export class PactCommittee {
       validatorIds: validators.map((validator) => validator.validatorId),
       votes: [],
       status: "pending",
+      selectionAudit,
       optParamsHash: config.optParamsHash,
       attestationCount,
       createdAt,
@@ -285,6 +304,7 @@ export class PactCommittee {
     };
 
     this.applyDeviationTracking(finalized);
+    this.applyNoShowPenalties(finalized, reason, now);
     this.releaseCommitteeAssignments(finalized.validatorIds, now);
     this.committeeReviews.set(missionId, structuredClone(finalized));
     return structuredClone(finalized);
@@ -339,8 +359,8 @@ export class PactCommittee {
       .sort((left, right) => left.validatorId.localeCompare(right.validatorId));
   }
 
-  private selectCommitteeValidators(config: CommitteeConfig): ValidatorAccount[] {
-    return [...this.validatorAccounts.values()]
+  private selectCommitteeValidators(config: CommitteeConfig): { selected: ValidatorAccount[]; candidateCount: number } {
+    const candidates = [...this.validatorAccounts.values()]
       .filter((validator) =>
         validator.available &&
         validator.pendingAssignments === 0 &&
@@ -353,9 +373,12 @@ export class PactCommittee {
           return weightDifference;
         }
         return left.validatorId.localeCompare(right.validatorId);
-      })
-      .slice(0, config.committeeSize)
-      .map((validator) => structuredClone(validator));
+      });
+
+    return {
+      selected: candidates.slice(0, config.committeeSize).map((v) => structuredClone(v)),
+      candidateCount: candidates.length,
+    };
   }
 
   private hasReachedThreshold(review: CommitteeReview, decision: CommitteeDecision): boolean {
@@ -392,6 +415,54 @@ export class PactCommittee {
         totalDisagreements: disagreed ? account.totalDisagreements + 1 : account.totalDisagreements,
         totalSlashAmountCents,
         lastUpdatedAt: review.outcome.decidedAt,
+      });
+    }
+  }
+
+  /** Record that a jury/appeal overturned the committee outcome for a mission. */
+  async recordAppealOutcome(missionId: string): Promise<void> {
+    const review = this.committeeReviews.get(missionId);
+    if (!review?.outcome) {
+      return;
+    }
+    // Validators who voted with the losing side have their appeal outcome count incremented.
+    const losingDecision: CommitteeDecision = review.outcome.decision === "approve" ? "reject" : "approve";
+    const overturnedIds = review.votes
+      .filter((v) => v.decision === review.outcome!.decision)
+      .map((v) => v.validatorId);
+
+    for (const validatorId of overturnedIds) {
+      const account = this.validatorAccounts.get(validatorId);
+      if (!account) {
+        continue;
+      }
+      this.validatorAccounts.set(validatorId, {
+        ...account,
+        appealOutcomes: account.appealOutcomes + 1,
+        lastUpdatedAt: this.now(),
+      });
+    }
+    void losingDecision; // suppress unused variable warning
+  }
+
+  private applyNoShowPenalties(review: CommitteeReview, reason: CommitteeOutcome["reason"], now: number): void {
+    // Only apply no-show penalties when the committee expired at deadline — those who didn't vote are no-shows.
+    if (reason !== "deadline") {
+      return;
+    }
+    const voterIds = new Set(review.votes.map((v) => v.validatorId));
+    for (const validatorId of review.validatorIds) {
+      if (voterIds.has(validatorId)) {
+        continue;
+      }
+      const account = this.validatorAccounts.get(validatorId);
+      if (!account) {
+        continue;
+      }
+      this.validatorAccounts.set(validatorId, {
+        ...account,
+        noShowCount: account.noShowCount + 1,
+        lastUpdatedAt: now,
       });
     }
   }
@@ -443,7 +514,13 @@ export class PactCommittee {
   }
 
   private computeValidatorWeight(account: ValidatorAccount): number {
-    return account.reputation * Math.max(account.stakeCents, 1);
+    // Appeal outcomes reduce weight by 10% each (down to 10% minimum).
+    // No-shows reduce weight by 5% each on top of appeal penalties.
+    const penaltyMultiplier = Math.max(
+      0.1,
+      1 - account.appealOutcomes * 0.1 - account.noShowCount * 0.05,
+    );
+    return account.reputation * Math.max(account.stakeCents, 1) * penaltyMultiplier;
   }
 
   private getCommitteeOrThrow(missionId: string): CommitteeReview {

@@ -40,6 +40,10 @@ export interface ValidatorAccount {
   consecutiveDisagreements: number;
   totalDisagreements: number;
   totalSlashAmountCents: number;
+  /** Times a committee decision this validator was on was overturned by a jury/appeal. */
+  appealOutcomes: number;
+  /** Times this validator was assigned to a committee but did not vote before deadline. */
+  noShowCount: number;
   stakedAt: number;
   lastUpdatedAt: number;
   unstakeRequestedAt?: number;
@@ -66,6 +70,22 @@ export interface CommitteeSelection {
   deadlineAt: number;
   optParamsHash?: string;
   attestationCount: number;
+}
+
+export interface CommitteeSelectionAuditEntry {
+  validatorId: string;
+  reputationAtSelection: number;
+  stakeAtSelection: number;
+  weightAtSelection: number;
+  appealOutcomesAtSelection: number;
+  noShowCountAtSelection: number;
+}
+
+export interface CommitteeSelectionAudit {
+  selectedAt: number;
+  /** Total eligible candidates considered before slicing to committeeSize. */
+  candidateCount: number;
+  entries: CommitteeSelectionAuditEntry[];
 }
 
 export interface CommitteeOutcome {
