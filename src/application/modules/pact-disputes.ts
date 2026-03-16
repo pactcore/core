@@ -10,9 +10,12 @@ import { generateId } from "../utils";
 import { NotFoundError } from "../../domain/errors";
 import type { MissionEnvelope } from "../../domain/types";
 import type {
+  DisputeBondDistribution,
   DisputeCase,
   DisputeConfig,
   DisputeEvidence,
+  DisputeStatus,
+  DisputeSubjectType,
   DisputeVerdict,
   JuryVote,
 } from "../../domain/dispute-resolution";
@@ -25,19 +28,34 @@ const defaultDisputeConfig: DisputeConfig = {
   votingPeriodMs: 24 * 60 * 60 * 1000,
   evidencePeriodMs: 12 * 60 * 60 * 1000,
   minJuryReputation: 60,
+  minimumBondCents: 500,
+  bondPenaltyBps: DEFAULT_PENALTY_BPS,
+  bondJuryShareBps: 7_000,
+  protocolTreasuryId: "protocol:treasury",
+  bondEscrowId: "dispute:escrow",
+  bondAssetId: "USDC",
+  bondUnit: "USDC_CENTS",
 };
+
+const terminalMissionStatuses = new Set<MissionEnvelope["status"]>(["Settled", "Failed", "Cancelled"]);
 
 export interface DisputeEvidenceInput {
   description: string;
   artifactUris: string[];
+  subjectType?: DisputeSubjectType;
+  subjectRef?: string;
+  evidenceHash?: string;
+  bondAmountCents?: number;
 }
 
 export interface PactDisputesOptions {
   config?: Partial<DisputeConfig>;
+  now?: () => number;
 }
 
 export class PactDisputes {
   private readonly config: DisputeConfig;
+  private readonly now: () => number;
 
   constructor(
     private readonly disputeRepository: DisputeRepository,
@@ -48,6 +66,7 @@ export class PactDisputes {
     options: PactDisputesOptions = {},
   ) {
     this.config = this.resolveConfig(options.config);
+    this.now = options.now ?? Date.now;
   }
 
   async openDispute(
@@ -56,23 +75,43 @@ export class PactDisputes {
     initialEvidence: DisputeEvidenceInput,
   ): Promise<DisputeCase> {
     const mission = await this.getMissionOrThrow(missionId);
-    if (mission.status === "Settled" || mission.status === "Cancelled") {
-      throw new Error(`mission ${mission.id} is terminal: ${mission.status}`);
+    if (!terminalMissionStatuses.has(mission.status)) {
+      throw new Error(`mission ${mission.id} must be terminal before opening a dispute`);
     }
 
     await this.getParticipantOrThrow(challengerId);
     const respondentId = await this.resolveRespondentId(mission, challengerId);
+    const now = this.now();
+    const evidence = this.buildEvidence(challengerId, initialEvidence, now);
+    const bondAmountCents = this.resolveBondAmount(initialEvidence.bondAmountCents);
+    const subjectType = initialEvidence.subjectType ?? "mission";
+    const subjectRef = initialEvidence.subjectRef?.trim() || mission.id;
+    const evidenceHash = this.resolveEvidenceHash(initialEvidence, evidence);
 
-    const now = Date.now();
     const dispute: DisputeCase = {
       id: generateId("dispute"),
       missionId: mission.id,
       challengerId,
       respondentId,
       status: "open",
-      evidence: [this.buildEvidence(challengerId, initialEvidence, now)],
+      subjectType,
+      subjectRef,
+      evidenceHash,
+      evidence: [evidence],
       juryVotes: [],
+      bond: {
+        amountCents: bondAmountCents,
+        assetId: this.config.bondAssetId,
+        unit: this.config.bondUnit,
+        status: "escrowed",
+        postedAt: now,
+      },
+      expiry: {
+        evidenceDeadlineAt: now + this.config.evidencePeriodMs,
+        votingDeadlineAt: now + this.config.evidencePeriodMs + this.config.votingPeriodMs,
+      },
       createdAt: now,
+      openedAt: now,
     };
 
     await this.disputeRepository.save(dispute);
@@ -83,8 +122,12 @@ export class PactDisputes {
         missionId: dispute.missionId,
         challengerId: dispute.challengerId,
         respondentId: dispute.respondentId,
+        subjectType: dispute.subjectType,
+        subjectRef: dispute.subjectRef,
+        evidenceHash: dispute.evidenceHash,
+        bondAmountCents: dispute.bond.amountCents,
       },
-      createdAt: Date.now(),
+      createdAt: now,
     });
 
     return dispute;
@@ -97,7 +140,7 @@ export class PactDisputes {
   ): Promise<DisputeCase> {
     const dispute = await this.getDisputeOrThrow(disputeId);
 
-    if (dispute.status === "jury_vote" || dispute.status === "resolved") {
+    if (dispute.status === "jury_vote" || dispute.status === "resolved" || dispute.status === "expired") {
       throw new Error(`dispute ${dispute.id} is not accepting evidence`);
     }
     if (submitterId !== dispute.challengerId && submitterId !== dispute.respondentId) {
@@ -109,10 +152,11 @@ export class PactDisputes {
     }
 
     await this.getParticipantOrThrow(submitterId);
-    const submittedAt = Date.now();
+    const submittedAt = this.now();
     const updated: DisputeCase = {
       ...dispute,
       status: "evidence",
+      evidenceHash: evidence.evidenceHash?.trim() || dispute.evidenceHash,
       evidence: [...dispute.evidence, this.buildEvidence(submitterId, evidence, submittedAt)],
     };
 
@@ -123,8 +167,9 @@ export class PactDisputes {
         disputeId: updated.id,
         missionId: updated.missionId,
         submitterId,
+        evidenceHash: updated.evidenceHash,
       },
-      createdAt: Date.now(),
+      createdAt: submittedAt,
     });
 
     return updated;
@@ -133,8 +178,8 @@ export class PactDisputes {
   async closeEvidencePeriod(disputeId: string): Promise<DisputeCase> {
     const dispute = await this.getDisputeOrThrow(disputeId);
 
-    if (dispute.status === "resolved") {
-      throw new Error(`dispute ${dispute.id} is already resolved`);
+    if (dispute.status === "resolved" || dispute.status === "expired") {
+      throw new Error(`dispute ${dispute.id} is no longer active`);
     }
     if (dispute.status === "jury_vote") {
       return dispute;
@@ -152,7 +197,7 @@ export class PactDisputes {
         disputeId: updated.id,
         missionId: updated.missionId,
       },
-      createdAt: Date.now(),
+      createdAt: this.now(),
     });
 
     return updated;
@@ -173,11 +218,19 @@ export class PactDisputes {
       dispute = await this.closeEvidencePeriod(dispute.id);
     }
 
-    if (dispute.status === "resolved") {
-      throw new Error(`dispute ${dispute.id} is already resolved`);
+    if (dispute.status === "resolved" || dispute.status === "expired") {
+      throw new Error(`dispute ${dispute.id} is no longer active`);
     }
     if (dispute.status !== "jury_vote") {
       throw new Error(`dispute ${dispute.id} is not open for jury voting`);
+    }
+    if (this.isVotingPeriodExpired(dispute)) {
+      if (dispute.juryVotes.length === 0) {
+        await this.expireDispute(dispute.id);
+        throw new Error(`dispute ${dispute.id} expired due to jury inactivity`);
+      }
+      dispute = await this.resolveFromSnapshot(dispute);
+      throw new Error(`dispute ${dispute.id} already resolved after voting deadline`);
     }
 
     const juror = await this.participantRepository.getById(jurorId);
@@ -202,6 +255,7 @@ export class PactDisputes {
       );
     }
 
+    const votedAt = this.now();
     const updated: DisputeCase = {
       ...dispute,
       juryVotes: [
@@ -210,7 +264,7 @@ export class PactDisputes {
           jurorId,
           vote,
           reasoning: reasoning.trim(),
-          votedAt: Date.now(),
+          votedAt,
         },
       ],
     };
@@ -224,7 +278,7 @@ export class PactDisputes {
         jurorId,
         vote,
       },
-      createdAt: Date.now(),
+      createdAt: votedAt,
     });
 
     if (this.hasQuorum(updated)) {
@@ -237,7 +291,7 @@ export class PactDisputes {
   async resolveDispute(disputeId: string): Promise<DisputeCase> {
     let dispute = await this.getDisputeOrThrow(disputeId);
 
-    if (dispute.status === "resolved") {
+    if (dispute.status === "resolved" || dispute.status === "expired") {
       return dispute;
     }
 
@@ -252,24 +306,54 @@ export class PactDisputes {
       throw new Error(`dispute ${dispute.id} cannot be resolved before quorum or voting timeout`);
     }
 
+    if (this.isVotingPeriodExpired(dispute) && dispute.juryVotes.length === 0) {
+      return this.expireFromSnapshot(dispute, "liveness_failure");
+    }
+
     return this.resolveFromSnapshot(dispute);
+  }
+
+  async expireDispute(disputeId: string): Promise<DisputeCase> {
+    const dispute = await this.getDisputeOrThrow(disputeId);
+
+    if (dispute.status === "expired") {
+      return dispute;
+    }
+    if (dispute.status === "resolved") {
+      throw new Error(`dispute ${dispute.id} is already resolved`);
+    }
+    if (!this.isVotingPeriodExpired(dispute)) {
+      throw new Error(`dispute ${dispute.id} cannot expire before the review deadline`);
+    }
+    if (dispute.juryVotes.length > 0) {
+      throw new Error(`dispute ${dispute.id} has jury activity and must be resolved instead of expired`);
+    }
+
+    return this.expireFromSnapshot(dispute, "liveness_failure");
   }
 
   async getDispute(disputeId: string): Promise<DisputeCase> {
     return this.getDisputeOrThrow(disputeId);
   }
 
-  async listDisputes(status?: DisputeCase["status"]): Promise<DisputeCase[]> {
+  async listDisputes(status?: DisputeStatus): Promise<DisputeCase[]> {
     return this.disputeRepository.list(status);
   }
 
   private async resolveFromSnapshot(dispute: DisputeCase): Promise<DisputeCase> {
-    const verdict = this.computeVerdict(dispute);
+    const resolvedAt = this.now();
+    const verdict = this.computeVerdict(dispute, resolvedAt);
     const resolved: DisputeCase = {
       ...dispute,
       status: "resolved",
       verdict,
-      resolvedAt: Date.now(),
+      bond: {
+        ...dispute.bond,
+        status: verdict.outcome === "upheld" ? "settled" : "settled",
+        releasedAt: resolvedAt,
+        distribution: verdict.bondDistribution,
+      },
+      resolvedAt,
     };
 
     await this.disputeRepository.save(resolved);
@@ -280,14 +364,59 @@ export class PactDisputes {
         missionId: resolved.missionId,
         outcome: verdict.outcome,
         penaltyBps: verdict.penaltyBps,
+        bondDistribution: verdict.bondDistribution,
       },
-      createdAt: Date.now(),
+      createdAt: resolvedAt,
     });
 
     return resolved;
   }
 
-  private computeVerdict(dispute: DisputeCase): DisputeVerdict {
+  private async expireFromSnapshot(
+    dispute: DisputeCase,
+    reason: DisputeCase["expiry"]["reason"],
+  ): Promise<DisputeCase> {
+    const expiredAt = this.now();
+    const refundDistribution: DisputeBondDistribution = {
+      challengerRefundCents: dispute.bond.amountCents,
+      juryAmountCents: 0,
+      protocolAmountCents: 0,
+      penaltyAmountCents: 0,
+    };
+    const expired: DisputeCase = {
+      ...dispute,
+      status: "expired",
+      bond: {
+        ...dispute.bond,
+        status: "refunded",
+        releasedAt: expiredAt,
+        distribution: refundDistribution,
+      },
+      expiry: {
+        ...dispute.expiry,
+        expiredAt,
+        reason,
+      },
+      expiredAt,
+    };
+
+    await this.disputeRepository.save(expired);
+    await this.eventBus.publish({
+      name: DomainEvents.DisputeResolved,
+      payload: {
+        disputeId: expired.id,
+        missionId: expired.missionId,
+        outcome: "expired",
+        reason,
+        bondDistribution: refundDistribution,
+      },
+      createdAt: expiredAt,
+    });
+
+    return expired;
+  }
+
+  private computeVerdict(dispute: DisputeCase, resolvedAt: number): DisputeVerdict {
     const upholdVoters = dispute.juryVotes
       .filter((entry) => entry.vote === "uphold")
       .map((entry) => entry.jurorId);
@@ -295,33 +424,59 @@ export class PactDisputes {
       .filter((entry) => entry.vote === "reject")
       .map((entry) => entry.jurorId);
 
-    const outcome: DisputeVerdict["outcome"] = upholdVoters.length > rejectVoters.length
-      ? "upheld"
-      : rejectVoters.length > upholdVoters.length
-        ? "rejected"
-        : "split";
+    const outcome: DisputeVerdict["outcome"] =
+      upholdVoters.length > rejectVoters.length
+        ? "upheld"
+        : upholdVoters.length < rejectVoters.length
+          ? "rejected"
+          : "split";
+    const rewardedJurors = outcome === "upheld" ? upholdVoters : rejectVoters;
 
-    const rewardedJurors = outcome === "upheld"
-      ? upholdVoters
-      : outcome === "rejected"
-        ? rejectVoters
-        : dispute.juryVotes.map((entry) => entry.jurorId);
+    const bondDistribution = outcome === "upheld"
+      ? this.buildUpheldBondDistribution(dispute.bond.amountCents)
+      : this.buildRejectedBondDistribution(dispute.bond.amountCents);
 
     return {
       outcome,
-      penaltyBps: outcome === "split" ? 0 : DEFAULT_PENALTY_BPS,
-      rewardDistribution: this.buildRewardDistribution(rewardedJurors),
+      penaltyBps: outcome === "upheld" ? this.config.bondPenaltyBps : BASIS_POINTS,
+      rewardDistribution: this.buildRewardDistribution(rewardedJurors, bondDistribution.juryAmountCents),
+      bondDistribution,
     };
   }
 
-  private buildRewardDistribution(jurorIds: string[]): Record<string, number> {
-    if (jurorIds.length === 0) {
+  private buildUpheldBondDistribution(amountCents: number): DisputeBondDistribution {
+    const penaltyAmountCents = Math.round((amountCents * this.config.bondPenaltyBps) / BASIS_POINTS);
+    const juryAmountCents = Math.round((penaltyAmountCents * this.config.bondJuryShareBps) / BASIS_POINTS);
+    const protocolAmountCents = penaltyAmountCents - juryAmountCents;
+
+    return {
+      challengerRefundCents: amountCents - penaltyAmountCents,
+      juryAmountCents,
+      protocolAmountCents,
+      penaltyAmountCents,
+    };
+  }
+
+  private buildRejectedBondDistribution(amountCents: number): DisputeBondDistribution {
+    const juryAmountCents = Math.round((amountCents * this.config.bondJuryShareBps) / BASIS_POINTS);
+    const protocolAmountCents = amountCents - juryAmountCents;
+
+    return {
+      challengerRefundCents: 0,
+      juryAmountCents,
+      protocolAmountCents,
+      penaltyAmountCents: amountCents,
+    };
+  }
+
+  private buildRewardDistribution(jurorIds: string[], totalRewardCents: number): Record<string, number> {
+    if (jurorIds.length === 0 || totalRewardCents <= 0) {
       return {};
     }
 
     const distribution: Record<string, number> = {};
-    const share = Math.floor(BASIS_POINTS / jurorIds.length);
-    let remainder = BASIS_POINTS - share * jurorIds.length;
+    const share = Math.floor(totalRewardCents / jurorIds.length);
+    let remainder = totalRewardCents - share * jurorIds.length;
 
     for (const jurorId of jurorIds) {
       const bonus = remainder > 0 ? 1 : 0;
@@ -360,6 +515,28 @@ export class PactDisputes {
     };
   }
 
+  private resolveBondAmount(bondAmountCents?: number): number {
+    const amount = bondAmountCents ?? this.config.minimumBondCents;
+    if (!Number.isInteger(amount) || amount < this.config.minimumBondCents) {
+      throw new Error(`dispute bond must be an integer >= ${this.config.minimumBondCents}`);
+    }
+    return amount;
+  }
+
+  private resolveEvidenceHash(input: DisputeEvidenceInput, evidence: DisputeEvidence): string {
+    const provided = input.evidenceHash?.trim();
+    if (provided) {
+      return provided;
+    }
+
+    const source = `${evidence.submitterId}:${evidence.description}:${evidence.artifactUris.join("|")}`;
+    let hash = 0;
+    for (const char of source) {
+      hash = (hash * 31 + char.charCodeAt(0)) % 1_000_000_007;
+    }
+    return `evidence:${hash.toString(16)}`;
+  }
+
   private hasQuorum(dispute: DisputeCase): boolean {
     return dispute.juryVotes.length >= this.quorumSize();
   }
@@ -369,12 +546,11 @@ export class PactDisputes {
   }
 
   private isEvidencePeriodExpired(dispute: DisputeCase): boolean {
-    return Date.now() >= dispute.createdAt + this.config.evidencePeriodMs;
+    return this.now() >= dispute.expiry.evidenceDeadlineAt;
   }
 
   private isVotingPeriodExpired(dispute: DisputeCase): boolean {
-    const votingDeadline = dispute.createdAt + this.config.evidencePeriodMs + this.config.votingPeriodMs;
-    return Date.now() >= votingDeadline;
+    return this.now() >= dispute.expiry.votingDeadlineAt;
   }
 
   private async getMissionOrThrow(missionId: string): Promise<MissionEnvelope> {
@@ -437,6 +613,15 @@ export class PactDisputes {
     }
     if (!Number.isFinite(config.minJuryReputation) || config.minJuryReputation < 0) {
       throw new Error("dispute minJuryReputation must be a non-negative number");
+    }
+    if (!Number.isInteger(config.minimumBondCents) || config.minimumBondCents <= 0) {
+      throw new Error("dispute minimumBondCents must be a positive integer");
+    }
+    if (!Number.isInteger(config.bondPenaltyBps) || config.bondPenaltyBps < 0 || config.bondPenaltyBps > BASIS_POINTS) {
+      throw new Error("dispute bondPenaltyBps must be between 0 and 10000");
+    }
+    if (!Number.isInteger(config.bondJuryShareBps) || config.bondJuryShareBps < 0 || config.bondJuryShareBps > BASIS_POINTS) {
+      throw new Error("dispute bondJuryShareBps must be between 0 and 10000");
     }
 
     return config;

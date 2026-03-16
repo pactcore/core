@@ -213,10 +213,11 @@ function createFixture(): SweepFixture {
     {
       config: {
         jurySize: 3,
-        votingPeriodMs: 0,
+        votingPeriodMs: 3_600_000,
         evidencePeriodMs: 0,
         minJuryReputation: 60,
       },
+      now: clock.now,
     },
   );
 
@@ -360,6 +361,23 @@ async function createDispute(fixture: SweepFixture): Promise<DisputeCase> {
     },
   });
   await fixture.pactMissions.claimMission(mission.id, "agent-2");
+
+  // Move to InProgress then terminal (ERC-8183 requires terminal jobs for disputes)
+  await fixture.pactMissions.appendExecutionStep({
+    missionId: mission.id,
+    agentId: "agent-2",
+    kind: "data_collection",
+    summary: "Collected outputs",
+    inputHash: "0xabc",
+    outputHash: "0xdef",
+  });
+  await fixture.pactMissions.recordVerdict({
+    missionId: mission.id,
+    reviewerId: "validator-2",
+    approve: false,
+    confidence: 95,
+    notes: "quality issues",
+  });
 
   return fixture.pactDisputes.openDispute(mission.id, "validator-2", {
     description: "validation mismatch",
