@@ -196,6 +196,17 @@ describe("PactAnalytics module", () => {
       notes: "Low confidence triggers escalation",
     });
 
+    // Resolve the challenge to reach terminal status (ERC-8183 requires terminal jobs for disputes)
+    const missionAfterVerdict = await container.pactMissions.getMission(mission.id);
+    const challenge = missionAfterVerdict.challenges[0];
+    await container.pactMissions.resolveMissionChallenge({
+      missionId: mission.id,
+      challengeId: challenge.id,
+      resolverId: "validator-1",
+      approve: false,
+      notes: "Rejected after review",
+    });
+
     await container.pactDisputes.openDispute(mission.id, "validator-1", {
       description: "Evidence mismatch",
       artifactUris: ["ipfs://evidence-1"],

@@ -104,3 +104,22 @@ bun --hot ./index.ts
 ```
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+
+## ERC-8183 Work Context
+
+Read these files before making large changes:
+
+- `PROJECT.md`
+- `REQUIREMENTS.md`
+- `ROADMAP.md`
+- `STATE.md`
+
+Current priority is finishing the active ERC-8183 core alignment slice. Keep the stricter lifecycle rules that were already introduced:
+
+- disputes open only from terminal mission states
+- `CommitteeReview` is a real validation layer
+- dispute evidence/voting expiry should stay enforced
+
+Do not "fix" tests by weakening the domain rules. Update fixtures and flows so they respect the new lifecycle.
+
+When validating changes, start with `bun test`.

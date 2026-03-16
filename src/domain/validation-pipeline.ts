@@ -1,7 +1,7 @@
 import { ValidationFailedError } from "./errors";
 import type { ValidationEvidence } from "./types";
 
-export type ValidationLayer = "AutoAI" | "AgentValidators" | "HumanJury";
+export type ValidationLayer = "AutoAI" | "CommitteeReview" | "HumanJury";
 
 export interface AutoAILayerConfig {
   enabled: boolean;
@@ -16,7 +16,8 @@ export interface VotingLayerConfig {
 
 export interface ValidationConfig {
   autoAI: AutoAILayerConfig;
-  agentValidators: VotingLayerConfig;
+  committeeReview?: VotingLayerConfig;
+  agentValidators?: VotingLayerConfig;
   humanJury: VotingLayerConfig;
 }
 
@@ -74,19 +75,20 @@ export class ThreeLayerValidationPipeline {
       };
     }
 
-    const agentStep = this.evaluateVotingLayer(
-      "AgentValidators",
-      evidence.agentVotes,
-      this.config.agentValidators,
+    const committeeVotes = evidence.committeeVotes ?? evidence.agentVotes;
+    const committeeStep = this.evaluateVotingLayer(
+      "CommitteeReview",
+      committeeVotes,
+      this.resolveCommitteeReviewConfig(),
     );
-    steps.push(agentStep);
+    steps.push(committeeStep);
 
-    if (agentStep.executed && agentStep.passed) {
+    if (committeeStep.executed && committeeStep.passed) {
       return {
         passed: true,
-        terminalLayer: "AgentValidators",
+        terminalLayer: "CommitteeReview",
         steps,
-        validatorIds: evidence.agentVotes.map((vote) => vote.participantId),
+        validatorIds: committeeVotes.map((vote) => vote.participantId),
       };
     }
 
@@ -109,7 +111,7 @@ export class ThreeLayerValidationPipeline {
     const reason = "Validation pipeline failed to meet the configured thresholds.";
     return {
       passed: false,
-      terminalLayer: humanStep.executed ? "HumanJury" : agentStep.executed ? "AgentValidators" : null,
+      terminalLayer: humanStep.executed ? "HumanJury" : committeeStep.executed ? "CommitteeReview" : null,
       steps,
       validatorIds: [],
       reason,
@@ -158,12 +160,25 @@ export class ThreeLayerValidationPipeline {
       votes: votes.length,
     };
   }
+
+  private resolveCommitteeReviewConfig(): VotingLayerConfig {
+    return this.config.committeeReview ?? this.config.agentValidators ?? {
+      enabled: false,
+      passThreshold: 1,
+      requiredParticipants: 1,
+    };
+  }
 }
 
 export const recommendedValidationConfig: ValidationConfig = {
   autoAI: {
     enabled: true,
     passThreshold: 0.8,
+  },
+  committeeReview: {
+    enabled: true,
+    passThreshold: 0.75,
+    requiredParticipants: 3,
   },
   agentValidators: {
     enabled: true,

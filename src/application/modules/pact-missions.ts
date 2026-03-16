@@ -19,6 +19,7 @@ import { validateCompensationModel } from "../../domain/economics";
 import { NotFoundError } from "../../domain/errors";
 import { MissionStateMachine } from "../../domain/mission-state-machine";
 import type { CompensationModel } from "../../domain/economics";
+import type { SettlementDistribution } from "../../domain/dispute-resolution";
 import type {
   EvidenceBundle,
   ExecutionStep,
@@ -96,9 +97,18 @@ export interface ChallengeStakePolicy {
   unit: string;
 }
 
+export interface MissionSettlementPolicy {
+  providerShareBps: number;
+  validatorShareBps: number;
+  treasuryShareBps: number;
+  issuerShareBps: number;
+  treasuryRecipientId: string;
+}
+
 export interface PactMissionsOptions {
   settlementRecordRepository?: SettlementRecordRepository;
   challengeStakePolicy?: Partial<ChallengeStakePolicy>;
+  missionSettlementPolicy?: Partial<MissionSettlementPolicy>;
 }
 
 const BASIS_POINTS = 10_000;
@@ -113,10 +123,19 @@ const defaultChallengeStakePolicy: ChallengeStakePolicy = {
   unit: "USDC_CENTS",
 };
 
+const defaultMissionSettlementPolicy: MissionSettlementPolicy = {
+  providerShareBps: 8_500,
+  validatorShareBps: 500,
+  treasuryShareBps: 500,
+  issuerShareBps: 500,
+  treasuryRecipientId: "protocol:treasury",
+};
+
 export class PactMissions {
   private readonly stateMachine = new MissionStateMachine();
   private readonly settlementRecordRepository?: SettlementRecordRepository;
   private readonly challengeStakePolicy: ChallengeStakePolicy;
+  private readonly missionSettlementPolicy: MissionSettlementPolicy;
 
   constructor(
     private readonly missionRepository: MissionRepository,
@@ -128,6 +147,7 @@ export class PactMissions {
   ) {
     this.settlementRecordRepository = options.settlementRecordRepository;
     this.challengeStakePolicy = this.resolveChallengeStakePolicy(options.challengeStakePolicy);
+    this.missionSettlementPolicy = this.resolveMissionSettlementPolicy(options.missionSettlementPolicy);
   }
 
   async createMission(input: CreateMissionInput): Promise<MissionEnvelope> {
@@ -421,13 +441,20 @@ export class PactMissions {
     }
 
     const settled = this.stateMachine.transition(mission, "Settled");
+    const settlementDistribution = this.buildMissionSettlementDistribution({
+      mission: settled,
+      validatorIds: [input.reviewerId],
+    });
     const updated: MissionEnvelope = {
       ...settled,
       verdicts,
+      settlementDistribution,
+      settledAt: Date.now(),
       updatedAt: Date.now(),
     };
 
     await this.missionRepository.save(updated);
+    await this.appendMissionSettlementRecords(updated, settlementDistribution);
 
     if (updated.claimedBy) {
       await this.mailbox.enqueueInbox(updated.claimedBy, "mission.verdict", {
@@ -582,13 +609,24 @@ export class PactMissions {
     );
 
     const transitioned = this.stateMachine.transition(mission, input.approve ? "Settled" : "Failed");
+    const settlementDistribution = input.approve
+      ? this.buildMissionSettlementDistribution({
+          mission: transitioned,
+          validatorIds: this.extractMissionSettlementValidatorIds(mission, challenge, input.resolverId),
+        })
+      : undefined;
     const updated: MissionEnvelope = {
       ...transitioned,
       challenges: updatedChallenges,
+      settlementDistribution,
+      settledAt: input.approve ? resolvedAt : undefined,
       updatedAt: Date.now(),
     };
 
     await this.missionRepository.save(updated);
+    if (settlementDistribution) {
+      await this.appendMissionSettlementRecords(updated, settlementDistribution);
+    }
 
     await this.eventBus.publish({
       name: DomainEvents.MissionChallengeResolved,
@@ -843,6 +881,161 @@ export class PactMissions {
     return `challenge-${challengeId}`;
   }
 
+  private missionSettlementId(missionId: string): string {
+    return `mission-${missionId}`;
+  }
+
+  private buildMissionSettlementDistribution(input: {
+    mission: MissionEnvelope;
+    validatorIds: string[];
+  }): SettlementDistribution {
+    const providerRecipientId =
+      input.mission.claimedBy ??
+      input.mission.targetAgentIds[0] ??
+      input.mission.issuerId;
+    const uniqueValidatorIds = [...new Set(input.validatorIds.filter((validatorId) => validatorId.length > 0))];
+    const totalAmountCents = input.mission.budgetCents;
+    const providerAmountCents = Math.floor((totalAmountCents * this.missionSettlementPolicy.providerShareBps) / BASIS_POINTS);
+    const validatorAmountCents = Math.floor((totalAmountCents * this.missionSettlementPolicy.validatorShareBps) / BASIS_POINTS);
+    const treasuryAmountCents = Math.floor((totalAmountCents * this.missionSettlementPolicy.treasuryShareBps) / BASIS_POINTS);
+    const issuerAmountCents = Math.floor((totalAmountCents * this.missionSettlementPolicy.issuerShareBps) / BASIS_POINTS);
+    const effectiveValidatorAmountCents = uniqueValidatorIds.length > 0 ? validatorAmountCents : 0;
+    const allocated = providerAmountCents + effectiveValidatorAmountCents + treasuryAmountCents + issuerAmountCents;
+    const treasuryWithDust = treasuryAmountCents + (totalAmountCents - allocated);
+    const validatorPayouts = this.allocateAmountAcrossRecipients(effectiveValidatorAmountCents, uniqueValidatorIds);
+
+    return {
+      totalAmountCents,
+      providerAmountCents,
+      validatorAmountCents: effectiveValidatorAmountCents,
+      treasuryAmountCents: treasuryWithDust,
+      issuerAmountCents,
+      providerRecipientId,
+      treasuryRecipientId: this.missionSettlementPolicy.treasuryRecipientId,
+      issuerRecipientId: input.mission.issuerId,
+      validatorPayouts,
+    };
+  }
+
+  private allocateAmountAcrossRecipients(amountCents: number, recipientIds: string[]): Record<string, number> {
+    if (amountCents <= 0 || recipientIds.length === 0) {
+      return {};
+    }
+
+    const distribution: Record<string, number> = {};
+    const share = Math.floor(amountCents / recipientIds.length);
+    let remainder = amountCents - share * recipientIds.length;
+
+    for (const recipientId of recipientIds) {
+      const bonus = remainder > 0 ? 1 : 0;
+      distribution[recipientId] = share + bonus;
+      if (remainder > 0) {
+        remainder -= 1;
+      }
+    }
+
+    return distribution;
+  }
+
+  private extractMissionSettlementValidatorIds(
+    mission: MissionEnvelope,
+    challenge: MissionChallenge,
+    resolverId: string,
+  ): string[] {
+    const challengeVerdictIds = new Set(challenge.triggeredByVerdictIds);
+    const verdictReviewers = mission.verdicts
+      .filter((verdict) => challengeVerdictIds.size === 0 || challengeVerdictIds.has(verdict.id))
+      .map((verdict) => verdict.reviewerId);
+
+    const validators = verdictReviewers.length > 0 ? verdictReviewers : [resolverId];
+    return [...new Set(validators)];
+  }
+
+  private async appendMissionSettlementRecords(
+    mission: MissionEnvelope,
+    distribution: SettlementDistribution,
+  ): Promise<void> {
+    if (!this.settlementRecordRepository) {
+      return;
+    }
+
+    const occurredAt = mission.settledAt ?? mission.updatedAt;
+    const legs = [
+      {
+        legId: "mission-settlement-provider",
+        payerId: mission.issuerId,
+        payeeId: distribution.providerRecipientId,
+        amountCents: distribution.providerAmountCents,
+        eventType: "provider_paid",
+      },
+      {
+        legId: "mission-settlement-treasury",
+        payerId: mission.issuerId,
+        payeeId: distribution.treasuryRecipientId,
+        amountCents: distribution.treasuryAmountCents,
+        eventType: "treasury_paid",
+      },
+      {
+        legId: "mission-settlement-issuer-rebate",
+        payerId: mission.issuerId,
+        payeeId: distribution.issuerRecipientId,
+        amountCents: distribution.issuerAmountCents,
+        eventType: "issuer_rebated",
+      },
+    ];
+
+    for (const [validatorRecipientId, amountCents] of Object.entries(distribution.validatorPayouts)) {
+      legs.push({
+        legId: `mission-settlement-validator-${validatorRecipientId}`,
+        payerId: mission.issuerId,
+        payeeId: validatorRecipientId,
+        amountCents,
+        eventType: "validator_paid",
+      });
+    }
+
+    for (const leg of legs) {
+      if (leg.amountCents <= 0) {
+        continue;
+      }
+
+      const record: SettlementRecord = {
+        id: generateId("settlement-record"),
+        settlementId: this.missionSettlementId(mission.id),
+        legId: leg.legId,
+        assetId: this.challengeStakePolicy.assetId,
+        rail: "api_quota",
+        connector: "api_quota_allocation",
+        payerId: leg.payerId,
+        payeeId: leg.payeeId,
+        amount: leg.amountCents,
+        unit: this.challengeStakePolicy.unit,
+        status: "applied",
+        externalReference: `mission_settlement:${mission.id}:${leg.legId}`,
+        connectorMetadata: {
+          module: "pact-missions",
+          category: "mission_settlement",
+          eventType: leg.eventType,
+          missionId: mission.id,
+          providerRecipientId: distribution.providerRecipientId,
+          treasuryRecipientId: distribution.treasuryRecipientId,
+          issuerRecipientId: distribution.issuerRecipientId,
+        },
+        createdAt: occurredAt,
+      };
+
+      await this.settlementRecordRepository.append(record);
+      await this.eventBus.publish({
+        name: DomainEvents.EconomicsSettlementRecordCreated,
+        payload: {
+          settlementId: record.settlementId,
+          record,
+        },
+        createdAt: Date.now(),
+      });
+    }
+  }
+
   private resolveDisagreementCounterpartyId(
     verdicts: ValidationVerdict[],
     challengerVerdict: ValidationVerdict,
@@ -874,6 +1067,27 @@ export class PactMissions {
     }
     if (!Number.isInteger(policy.juryShareBps) || policy.juryShareBps < 0 || policy.juryShareBps > BASIS_POINTS) {
       throw new Error("challenge juryShareBps must be an integer between 0 and 10000");
+    }
+
+    return policy;
+  }
+
+  private resolveMissionSettlementPolicy(
+    override: Partial<MissionSettlementPolicy> | undefined,
+  ): MissionSettlementPolicy {
+    const policy: MissionSettlementPolicy = {
+      ...defaultMissionSettlementPolicy,
+      ...override,
+    };
+
+    const total =
+      policy.providerShareBps +
+      policy.validatorShareBps +
+      policy.treasuryShareBps +
+      policy.issuerShareBps;
+
+    if (total !== BASIS_POINTS) {
+      throw new Error("mission settlement shares must sum to 10000 basis points");
     }
 
     return policy;

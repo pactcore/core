@@ -1,5 +1,6 @@
 import type { CompensationModel } from "./economics";
 import type { IdentityLevel } from "./identity-levels";
+import type { SettlementDistribution } from "./dispute-resolution";
 
 export type TaskStatus = "Created" | "Assigned" | "Submitted" | "Verified" | "Completed";
 
@@ -25,6 +26,7 @@ export interface ValidationVote {
 export interface ValidationEvidence {
   autoAIScore: number;
   agentVotes: ValidationVote[];
+  committeeVotes?: ValidationVote[];
   humanVotes: ValidationVote[];
 }
 
@@ -220,6 +222,8 @@ export interface MissionEnvelope {
   retryCount: number;
   maxRetries: number;
   escalationCount: number;
+  settlementDistribution?: SettlementDistribution;
+  settledAt?: number;
   createdAt: number;
   updatedAt: number;
 }

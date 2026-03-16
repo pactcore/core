@@ -84,6 +84,7 @@ import { PactHeartbeat } from "./modules/pact-heartbeat";
 import { PactID } from "./modules/pact-id";
 import { PactMissions } from "./modules/pact-missions";
 import { PactDisputes } from "./modules/pact-disputes";
+import { PactCommittee } from "./modules/pact-committee";
 import { PactPay } from "./modules/pact-pay";
 import { PactReconciliation } from "./modules/pact-reconciliation";
 import { PactSecurity } from "./modules/pact-security";
@@ -113,6 +114,7 @@ export interface PactContainer {
   pactPluginMarketplace: PactPluginMarketplace;
   pactMissions: PactMissions;
   pactDisputes: PactDisputes;
+  pactCommittee: PactCommittee;
   pactHeartbeat: PactHeartbeat;
   pactEconomics: PactEconomics;
   pactReconciliation: PactReconciliation;
@@ -445,6 +447,7 @@ export function createContainer(
     reputationRepository,
     eventBus,
   );
+  const pactCommittee = new PactCommittee(participantRepository, reputationRepository);
   const pactHeartbeat = new PactHeartbeat(heartbeatSupervisor, eventBus);
   const pactEconomics = new PactEconomics({
     settlementRecordRepository,
@@ -501,6 +504,7 @@ export function createContainer(
     pactPluginMarketplace,
     pactMissions,
     pactDisputes,
+    pactCommittee,
     pactHeartbeat,
     pactEconomics,
     pactReconciliation,

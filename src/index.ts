@@ -92,12 +92,22 @@ export {
   splitForfeitedChallengeStake,
 } from "./domain/challenge-stake";
 export type {
+  CommitteeConfig,
+  CommitteeOutcome,
+  CommitteeSelection,
+  CommitteeVote,
+  DisputeBond,
+  DisputeBondDistribution,
   DisputeCase,
   DisputeConfig,
   DisputeEvidence,
+  DisputeExpiry,
   DisputeStatus,
+  DisputeSubjectType,
   DisputeVerdict,
   JuryVote,
+  SettlementDistribution,
+  ValidatorAccount,
 } from "./domain/dispute-resolution";
 export { ThreeLayerValidationPipeline } from "./domain/validation-pipeline";
 export { ReputationModel } from "./domain/reputation";
@@ -400,6 +410,7 @@ export {
 } from "./domain/anti-spam";
 export { PactMissions } from "./application/modules/pact-missions";
 export { PactDisputes } from "./application/modules/pact-disputes";
+export { PactCommittee } from "./application/modules/pact-committee";
 export { PactHeartbeat } from "./application/modules/pact-heartbeat";
 export { PactEconomics } from "./application/modules/pact-economics";
 export { PactAntiSpam } from "./application/modules/pact-anti-spam";

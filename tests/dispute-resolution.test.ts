@@ -91,6 +91,25 @@ async function setupDisputeFixture() {
 
   await container.pactMissions.claimMission(mission.id, "agent-1");
 
+  // Move to InProgress via execution step
+  await container.pactMissions.appendExecutionStep({
+    missionId: mission.id,
+    agentId: "agent-1",
+    kind: "data_collection",
+    summary: "Collected shelf images",
+    inputHash: "0xabc",
+    outputHash: "0xdef",
+  });
+
+  // Fail the mission so it reaches terminal status (ERC-8183 requires terminal jobs for disputes)
+  await container.pactMissions.recordVerdict({
+    missionId: mission.id,
+    reviewerId: "validator-1",
+    approve: false,
+    confidence: 95,
+    notes: "quality issues found",
+  });
+
   return { container, missionId: mission.id };
 }
 

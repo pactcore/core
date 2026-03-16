@@ -1809,6 +1809,16 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
         artifactUris: Array.isArray(initialEvidence.artifactUris)
           ? initialEvidence.artifactUris.map((uri) => String(uri))
           : [],
+        subjectType:
+          body.subjectType === "mission" ||
+          body.subjectType === "submission" ||
+          body.subjectType === "evidence" ||
+          body.subjectType === "verdict"
+            ? body.subjectType
+            : undefined,
+        subjectRef: typeof body.subjectRef === "string" ? body.subjectRef : undefined,
+        evidenceHash: typeof body.evidenceHash === "string" ? body.evidenceHash : undefined,
+        bondAmountCents: typeof body.bondAmountCents === "number" ? body.bondAmountCents : undefined,
       },
     );
 
@@ -2079,7 +2089,8 @@ function isDisputeStatus(value?: string): value is DisputeStatus {
     value === "open" ||
     value === "evidence" ||
     value === "jury_vote" ||
-    value === "resolved"
+    value === "resolved" ||
+    value === "expired"
   );
 }
 

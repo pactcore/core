@@ -34,21 +34,9 @@
 
 - `tests/dispute-resolution.test.ts` was repaired and passed in targeted validation
 - `tests/analytics.test.ts` was repaired and passed in targeted validation
-- full suite reached `443 pass / 0 fail` (as of 2026-03-16)
-- all tests in `tests/integration-sweep.test.ts` now pass
+- full suite reached `441 pass / 2 fail`
+- remaining failures are both in `tests/integration-sweep.test.ts`
 
 ## Next Step
 
-ERC-8183 core alignment slice is complete. All 443 tests pass, domain rules enforced (expiry, terminal-state gating, CommitteeReview). No further work required on this slice.
-
-### Blockers/Concerns
-
-None.
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Status | Directory |
-|---|-------------|------|--------|--------|-----------|
-| 260316-dop | Finish ERC-8183 core alignment — fix failing dispute/jury integration-sweep tests | 2026-03-16 | 4c1b8c6 | Verified | [260316-dop-finish-erc-8183-core-alignment-fix-faili](./quick/260316-dop-finish-erc-8183-core-alignment-fix-faili/) |
-
-Last activity: 2026-03-16 - Completed quick task 260316-dop: Finish ERC-8183 core alignment — fix failing dispute/jury integration-sweep tests
+Repair the remaining integration-sweep dispute/jury flows so they respect the new expiry-aware lifecycle, then rerun full `bun test` and commit.

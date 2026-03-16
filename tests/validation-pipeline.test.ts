@@ -36,7 +36,7 @@ describe("ThreeLayerValidationPipeline", () => {
     });
 
     expect(outcome.passed).toBeTrue();
-    expect(outcome.terminalLayer).toBe("AgentValidators");
+    expect(outcome.terminalLayer).toBe("CommitteeReview");
     expect(outcome.validatorIds).toEqual(["v1", "v2", "v3"]);
   });
 
