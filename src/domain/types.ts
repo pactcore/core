@@ -4,6 +4,8 @@ import type { SettlementDistribution } from "./dispute-resolution";
 
 export type TaskStatus = "Created" | "Assigned" | "Submitted" | "Verified" | "Completed";
 
+export type TaskCategory = "physical" | "digital" | "verification" | "micro";
+
 export type ParticipantRole = "worker" | "validator" | "issuer" | "agent" | "jury";
 
 export interface GeoPoint {
@@ -43,6 +45,7 @@ export interface Task {
   description: string;
   issuerId: string;
   paymentCents: number;
+  category: TaskCategory;
   constraints: TaskConstraints;
   location: GeoPoint;
   status: TaskStatus;

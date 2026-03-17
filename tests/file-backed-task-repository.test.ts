@@ -18,6 +18,7 @@ function buildTask(index: number, overrides: Partial<Task> = {}): Task {
     description: "file-backed repository task",
     issuerId: index % 2 === 0 ? "issuer-2" : "issuer-1",
     paymentCents: 1000 + index,
+    category: "digital",
     constraints: {
       requiredSkills: index % 2 === 0 ? ["ml"] : ["ops"],
       maxDistanceKm: 50,

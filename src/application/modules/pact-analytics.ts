@@ -338,6 +338,9 @@ function taskIdFromPayload(payload: unknown): string | undefined {
 }
 
 function taskCategory(task: Task): string {
+  if (task.category) {
+    return task.category;
+  }
   const requiredSkills = task.constraints?.requiredSkills;
   if (Array.isArray(requiredSkills) && requiredSkills.length > 0 && requiredSkills[0]) {
     return String(requiredSkills[0]);

@@ -740,6 +740,7 @@ export function createApp(validationConfig?: ValidationConfig, options: CreateAp
       description: String(body.description),
       issuerId,
       paymentCents: Number(body.paymentCents),
+      category: body.category,
       location: body.location,
       constraints: body.constraints,
     });
