@@ -185,6 +185,14 @@ export {
   type MatchWeights,
 } from "./domain/multi-dimensional-matching";
 export { PaymentSplitService } from "./domain/payment-split";
+export {
+  isValidTaskCategory,
+  validateTaskCategory,
+  classifyTask,
+  validateTaskCategoryConsistency,
+  getTaskCategoryPolicy,
+} from "./domain/task-classification";
+export type { TaskCategoryPolicy } from "./domain/task-classification";
 export type {
   PaymentRoute,
   MicropaymentBatch,

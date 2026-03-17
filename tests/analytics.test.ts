@@ -131,7 +131,7 @@ describe("PactAnalytics module", () => {
     expect(analytics.completed).toBe(1);
     expect(analytics.failed).toBe(1);
     expect(analytics.avgCompletionTimeMs).toBeGreaterThanOrEqual(0);
-    expect(analytics.topCategories.some((entry) => entry.category === "image")).toBeTrue();
+    expect(analytics.topCategories.some((entry) => entry.category === "digital")).toBeTrue();
   });
 
   it("computes economic analytics with module revenue and top earners", async () => {

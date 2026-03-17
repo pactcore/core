@@ -18,6 +18,7 @@ function buildTask(id: string, overrides: Partial<Task> = {}): Task {
     description: "sqlite repository task",
     issuerId: "issuer-1",
     paymentCents: 1250,
+    category: "digital",
     constraints: {
       requiredSkills: ["analysis"],
       maxDistanceKm: 50,

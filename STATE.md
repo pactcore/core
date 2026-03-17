@@ -32,11 +32,19 @@
 
 ## Latest Validation Snapshot
 
-- `tests/dispute-resolution.test.ts` was repaired and passed in targeted validation
-- `tests/analytics.test.ts` was repaired and passed in targeted validation
-- full suite reached `441 pass / 2 fail`
-- remaining failures are both in `tests/integration-sweep.test.ts`
+- Full suite: **461 pass / 0 fail** (branch: feat/whitepaper-review-selection-sync, head: 865ca18)
+- New test files: `tests/committee-weights.test.ts` (12 tests), `tests/validation-escalation.test.ts` (8 tests)
+
+## What Changed in This Slice
+
+1. **Committee selection audit snapshots** — `CommitteeSelectionAudit` + `CommitteeSelectionAuditEntry` types; `selectionAudit` field on `CommitteeReview` populated at configure time with per-validator state snapshot and `candidateCount`.
+
+2. **Appeal/no-show weighting** — `ValidatorAccount` gains `appealOutcomes` and `noShowCount`; `computeValidatorWeight` applies `max(0.1, 1 - appeals*0.1 - noShows*0.05)` multiplier; `finalizeCommittee` increments `noShowCount` on deadline path; `recordAppealOutcome(missionId)` increments `appealOutcomes` for validators on overturned side.
+
+3. **Layered escalation metadata** — `ValidationOutcome` gains `escalations: EscalationMetadata[]`; `ValidationStepResult` gains `escalatedFrom?`; pipeline populates these on every AutoAI→Committee and Committee→HumanJury transition.
+
+4. **Committee API routes** — 8 new routes in `app.ts`; `getRequiredStringField` helper added.
 
 ## Next Step
 
-Repair the remaining integration-sweep dispute/jury flows so they respect the new expiry-aware lifecycle, then rerun full `bun test` and commit.
+Phase 3: SDK sync — propagate the stabilized committee/dispute/validation surface into `pact-sdk`.

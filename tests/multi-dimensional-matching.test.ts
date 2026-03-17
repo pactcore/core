@@ -14,6 +14,7 @@ function createTask(requiredSkills: string[] = ["vision", "gps"]): Task {
     description: "Collect and verify evidence",
     issuerId: "issuer-1",
     paymentCents: 10_000,
+    category: "physical",
     constraints: {
       requiredSkills,
       maxDistanceKm: 20,

@@ -10,6 +10,7 @@ function createTask(id: string, minReputation = 50): Task {
     description: "Need local verification",
     issuerId: "issuer-1",
     paymentCents: 20000,
+    category: "physical",
     constraints: {
       requiredSkills: ["photo", "gps"],
       maxDistanceKm: 20,

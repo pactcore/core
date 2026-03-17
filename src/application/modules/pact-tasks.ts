@@ -2,7 +2,8 @@ import { DomainEvents } from "../events";
 import type { EventBus, TaskManager, WorkerRepository } from "../contracts";
 import { NotFoundError } from "../../domain/errors";
 import { GaleShapleyMatcher } from "../../domain/matching";
-import type { Task, TaskConstraints, TaskEvidence } from "../../domain/types";
+import type { Task, TaskCategory, TaskConstraints, TaskEvidence } from "../../domain/types";
+import { classifyTask, validateTaskCategory } from "../../domain/task-classification";
 import { generateId } from "../utils";
 import { PactPay } from "./pact-pay";
 
@@ -11,6 +12,7 @@ export interface CreateTaskInput {
   description: string;
   issuerId: string;
   paymentCents: number;
+  category?: TaskCategory;
   location: {
     latitude: number;
     longitude: number;
@@ -30,12 +32,20 @@ export class PactTasks {
 
   async createTask(input: CreateTaskInput): Promise<Task> {
     const now = Date.now();
+    const category: TaskCategory = input.category
+      ? validateTaskCategory(input.category)
+      : classifyTask({
+          constraints: input.constraints,
+          paymentCents: input.paymentCents,
+          location: input.location,
+        });
     const task: Task = {
       id: generateId("task"),
       title: input.title,
       description: input.description,
       issuerId: input.issuerId,
       paymentCents: input.paymentCents,
+      category,
       constraints: input.constraints,
       location: input.location,
       status: "Created",

@@ -11,6 +11,7 @@ function createTask(): Task {
     description: "Deliver to point B",
     issuerId: "issuer-1",
     paymentCents: 10000,
+    category: "physical",
     constraints: {
       requiredSkills: ["delivery"],
       maxDistanceKm: 10,
