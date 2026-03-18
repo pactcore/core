@@ -512,16 +512,25 @@ export interface ProvenanceGraph {
   addEdge(edge: ProvenanceEdge): Promise<void>;
   getLineage(assetId: string): Promise<ProvenanceEdge[]>;
   getDependents(assetId: string): Promise<ProvenanceEdge[]>;
+  durability?: AdapterDurability;
+  isDurable?(): boolean;
+  getHealth?(): Promise<AdapterHealthReport> | AdapterHealthReport;
 }
 
 export interface IntegrityProofRepository {
   save(proof: IntegrityProof): Promise<void>;
   getByAsset(assetId: string): Promise<IntegrityProof | undefined>;
+  durability?: AdapterDurability;
+  isDurable?(): boolean;
+  getHealth?(): Promise<AdapterHealthReport> | AdapterHealthReport;
 }
 
 export interface DataAccessPolicyRepository {
   save(policy: DataAccessPolicy): Promise<void>;
   getByAsset(assetId: string): Promise<DataAccessPolicy | undefined>;
+  durability?: AdapterDurability;
+  isDurable?(): boolean;
+  getHealth?(): Promise<AdapterHealthReport> | AdapterHealthReport;
 }
 
 export interface DataAssetRepository {
@@ -541,6 +550,9 @@ export interface DataListingRepository {
   listByCategory(category: DataCategory): Promise<DataListing[]>;
   listBySeller(sellerId: string): Promise<DataListing[]>;
   listActive(): Promise<DataListing[]>;
+  durability?: AdapterDurability;
+  isDurable?(): boolean;
+  getHealth?(): Promise<AdapterHealthReport> | AdapterHealthReport;
 }
 
 export interface DataPurchaseRepository {
@@ -548,6 +560,9 @@ export interface DataPurchaseRepository {
   getById(id: string): Promise<DataPurchase | undefined>;
   listByBuyer(buyerId: string): Promise<DataPurchase[]>;
   listByAsset(assetId: string): Promise<DataPurchase[]>;
+  durability?: AdapterDurability;
+  isDurable?(): boolean;
+  getHealth?(): Promise<AdapterHealthReport> | AdapterHealthReport;
 }
 
 // ── PactDev Plugin Marketplace contracts ──────────────────────
