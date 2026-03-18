@@ -50,6 +50,88 @@ describe("adapter health routes", () => {
     }
   });
 
+  test("reports SQLite-backed data marketplace adapters as database durable", async () => {
+    const directory = await mkdtemp(join(process.cwd(), "tmp-data-adapter-sqlite-"));
+    const filePath = join(directory, "data-marketplace.sqlite");
+
+    try {
+      const container = createContainer(undefined, {
+        env: {
+          PACT_DB_FILE: filePath,
+        },
+      });
+
+      const source = await container.pactData.publish({
+        ownerId: "seller-db",
+        title: "Source Asset",
+        uri: "ipfs://asset-source",
+      });
+      const derived = await container.pactData.publish({
+        ownerId: "seller-db",
+        title: "Derived Asset",
+        uri: "ipfs://asset-derived",
+        derivedFrom: [source.id],
+      });
+      await container.pactData.registerIntegrityProof(derived.id, "sha256-derived");
+      const listing = await container.pactData.listAsset(derived.id, 1800, "labeled");
+      await container.pactData.purchaseAsset(listing.id, "buyer-db");
+
+      const app = createApp(undefined, {
+        container,
+      });
+      const response = await app.request("/data/adapters/health");
+      const body = (await response.json()) as {
+        status: string;
+        adapters: Array<{ name: string; durable?: boolean; durability?: string; state: string }>;
+      };
+
+      expect(response.status).toBe(200);
+      expect(body.status).toBe("healthy");
+      expect(body.adapters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "asset-metadata-store",
+            durable: true,
+            durability: "database",
+            state: "healthy",
+          }),
+          expect.objectContaining({
+            name: "provenance-graph",
+            durable: true,
+            durability: "database",
+            state: "healthy",
+          }),
+          expect.objectContaining({
+            name: "integrity-proof-repository",
+            durable: true,
+            durability: "database",
+            state: "healthy",
+          }),
+          expect.objectContaining({
+            name: "access-policy-repository",
+            durable: true,
+            durability: "database",
+            state: "healthy",
+          }),
+          expect.objectContaining({
+            name: "data-listing-repository",
+            durable: true,
+            durability: "database",
+            state: "healthy",
+          }),
+          expect.objectContaining({
+            name: "data-purchase-repository",
+            durable: true,
+            durability: "database",
+            state: "healthy",
+          }),
+        ]),
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("reports compute adapter runtime capabilities", async () => {
     const app = createApp();
     const response = await app.request("/compute/adapters/health");

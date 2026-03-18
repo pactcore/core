@@ -9,6 +9,7 @@ import type {
 import {
   aggregateAdapterHealth,
   DataAdapterError,
+  type AdapterDurability,
   type AdapterHealthReport,
   type AdapterHealthSummary,
 } from "../adapter-runtime";
@@ -286,39 +287,31 @@ export class PactData {
 
   async getAdapterHealth(): Promise<AdapterHealthSummary> {
     const reports: AdapterHealthReport[] = [
-      this.assetRepository.getHealth
-        ? await this.assetRepository.getHealth()
-        : {
-            name: "asset-metadata-store",
-            state: this.assetRepository.isDurable?.() ? "healthy" : "degraded",
-            checkedAt: Date.now(),
-            durable: this.assetRepository.isDurable?.() ?? false,
-            durability: this.assetRepository.durability ?? "memory",
-            features: {
-              assetMetadata: true,
-            },
-          },
-      {
+      await resolveDataRepositoryHealth(this.assetRepository, {
+        name: "asset-metadata-store",
+        state: "healthy",
+        checkedAt: Date.now(),
+        durable: false,
+        durability: "memory",
+        features: { assetMetadata: true },
+      }),
+      await resolveDataRepositoryHealth(this.provenanceGraph, {
         name: "provenance-graph",
         state: "healthy",
         checkedAt: Date.now(),
         durable: false,
         durability: "memory",
-        features: {
-          lineageTracking: true,
-        },
-      },
-      {
+        features: { lineageTracking: true },
+      }),
+      await resolveDataRepositoryHealth(this.integrityProofRepository, {
         name: "integrity-proof-repository",
         state: "healthy",
         checkedAt: Date.now(),
         durable: false,
         durability: "memory",
-        features: {
-          integrityVerification: true,
-        },
-      },
-      {
+        features: { integrityVerification: true },
+      }),
+      await resolveDataRepositoryHealth(this.accessPolicyRepository, {
         name: "access-policy-repository",
         state: "healthy",
         checkedAt: Date.now(),
@@ -328,8 +321,34 @@ export class PactData {
           accessControl: true,
           marketplace: Boolean(this.listingRepository && this.purchaseRepository),
         },
-      },
+      }),
     ];
+
+    if (this.listingRepository) {
+      reports.push(
+        await resolveDataRepositoryHealth(this.listingRepository, {
+          name: "data-listing-repository",
+          state: "healthy",
+          checkedAt: Date.now(),
+          durable: false,
+          durability: "memory",
+          features: { marketplace: true },
+        }),
+      );
+    }
+
+    if (this.purchaseRepository) {
+      reports.push(
+        await resolveDataRepositoryHealth(this.purchaseRepository, {
+          name: "data-purchase-repository",
+          state: "healthy",
+          checkedAt: Date.now(),
+          durable: false,
+          durability: "memory",
+          features: { marketplace: true },
+        }),
+      );
+    }
 
     return aggregateAdapterHealth(reports);
   }
@@ -773,4 +792,25 @@ export class PactData {
     const code = (error as { code?: string }).code;
     return code === "EAGAIN" || code === "ETIMEDOUT" || code === "ECONNRESET";
   }
+}
+
+interface DataRepositoryHealthTarget {
+  getHealth?(): Promise<AdapterHealthReport> | AdapterHealthReport;
+  durability?: AdapterDurability;
+  isDurable?(): boolean;
+}
+
+async function resolveDataRepositoryHealth(
+  adapter: DataRepositoryHealthTarget,
+  fallback: AdapterHealthReport,
+): Promise<AdapterHealthReport> {
+  if (adapter.getHealth) {
+    return await adapter.getHealth();
+  }
+
+  return {
+    ...fallback,
+    durable: adapter.isDurable?.() ?? fallback.durable,
+    durability: adapter.durability ?? fallback.durability,
+  };
 }

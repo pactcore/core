@@ -2,6 +2,8 @@ import type { ProvenanceGraph } from "../../application/contracts";
 import type { ProvenanceEdge } from "../../domain/types";
 
 export class InMemoryProvenanceGraph implements ProvenanceGraph {
+  readonly durability = "memory" as const;
+
   private readonly edges: ProvenanceEdge[] = [];
 
   async addEdge(edge: ProvenanceEdge): Promise<void> {
@@ -50,5 +52,19 @@ export class InMemoryProvenanceGraph implements ProvenanceGraph {
     }
 
     return result;
+  }
+
+  getHealth(): { name: string; state: string; checkedAt: number; durable: boolean; durability: string; features: Record<string, unknown> } {
+    return {
+      name: "provenance-graph",
+      state: "healthy",
+      checkedAt: Date.now(),
+      durable: false,
+      durability: this.durability,
+      features: {
+        lineageTracking: true,
+        recordedEdges: this.edges.length,
+      },
+    };
   }
 }

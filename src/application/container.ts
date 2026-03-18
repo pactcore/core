@@ -61,6 +61,12 @@ import { InMemoryDataAssetRepository } from "../infrastructure/data/in-memory-da
 import { FileBackedDataAssetMetadataStore } from "../infrastructure/data/file-backed-data-asset-metadata-store";
 import { InMemoryDataListingRepository } from "../infrastructure/data/in-memory-data-listing-repository";
 import { InMemoryDataPurchaseRepository } from "../infrastructure/data/in-memory-data-purchase-repository";
+import { SQLiteDataAssetMetadataStore } from "../infrastructure/data/sqlite-data-asset-metadata-store";
+import { SQLiteDataAccessPolicyRepository } from "../infrastructure/data/sqlite-data-access-policy-repository";
+import { SQLiteDataListingRepository } from "../infrastructure/data/sqlite-data-listing-repository";
+import { SQLiteDataPurchaseRepository } from "../infrastructure/data/sqlite-data-purchase-repository";
+import { SQLiteIntegrityProofRepository } from "../infrastructure/data/sqlite-integrity-proof-repository";
+import { SQLiteProvenanceGraph } from "../infrastructure/data/sqlite-provenance-graph";
 import { InMemoryPolicyRegistry } from "../infrastructure/governance/in-memory-policy-registry";
 import { InMemoryTemplateRepository } from "../infrastructure/governance/in-memory-template-repository";
 import { InMemoryPluginPackageRepository } from "../infrastructure/dev/in-memory-plugin-package-repository";
@@ -319,14 +325,26 @@ export function createContainer(
     zkProver = bridge;
     zkVerifier = bridge;
   }
-  const provenanceGraph = new InMemoryProvenanceGraph();
-  const integrityProofRepository = new InMemoryIntegrityProofRepository();
-  const dataAccessPolicyRepository = new InMemoryDataAccessPolicyRepository();
+  const provenanceGraph = dbFile
+    ? new SQLiteProvenanceGraph({ filePath: dbFile })
+    : new InMemoryProvenanceGraph();
+  const integrityProofRepository = dbFile
+    ? new SQLiteIntegrityProofRepository({ filePath: dbFile })
+    : new InMemoryIntegrityProofRepository();
+  const dataAccessPolicyRepository = dbFile
+    ? new SQLiteDataAccessPolicyRepository({ filePath: dbFile })
+    : new InMemoryDataAccessPolicyRepository();
   const dataAssetRepository = dataAssetStoreFile
     ? new FileBackedDataAssetMetadataStore({ filePath: dataAssetStoreFile })
-    : new InMemoryDataAssetRepository();
-  const dataListingRepository = new InMemoryDataListingRepository();
-  const dataPurchaseRepository = new InMemoryDataPurchaseRepository();
+    : dbFile
+      ? new SQLiteDataAssetMetadataStore({ filePath: dbFile })
+      : new InMemoryDataAssetRepository();
+  const dataListingRepository = dbFile
+    ? new SQLiteDataListingRepository({ filePath: dbFile })
+    : new InMemoryDataListingRepository();
+  const dataPurchaseRepository = dbFile
+    ? new SQLiteDataPurchaseRepository({ filePath: dbFile })
+    : new InMemoryDataPurchaseRepository();
   const policyRegistry = new InMemoryPolicyRegistry();
   const templateRepository = new InMemoryTemplateRepository();
   const identitySbtClient =

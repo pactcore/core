@@ -254,6 +254,53 @@ describe("SQLite repositories", () => {
     }
   });
 
+  it("persists pact-data marketplace state through SQLite wiring", async () => {
+    const { directory, filePath } = await createTempDatabasePath("pact-sqlite-data-");
+
+    try {
+      const first = createContainer(undefined, {
+        env: {
+          PACT_DB_FILE: filePath,
+        },
+      });
+
+      const source = await first.pactData.publish({
+        ownerId: "seller-sql",
+        title: "Source dataset",
+        uri: "ipfs://source-dataset",
+      });
+      const derived = await first.pactData.publish({
+        ownerId: "seller-sql",
+        title: "Derived dataset",
+        uri: "ipfs://derived-dataset",
+        derivedFrom: [source.id],
+      });
+      await first.pactData.registerIntegrityProof(derived.id, "hash-derived");
+      const listing = await first.pactData.listAsset(derived.id, 2500, "labeled");
+      const purchase = await first.pactData.purchaseAsset(listing.id, "buyer-sql");
+
+      const second = createContainer(undefined, {
+        env: {
+          PACT_DB_FILE: filePath,
+        },
+      });
+
+      expect((await second.pactData.list()).map((asset) => asset.id)).toEqual([source.id, derived.id]);
+      expect(await second.pactData.verifyIntegrity(derived.id, "hash-derived")).toBe(true);
+      expect(await second.pactData.checkAccess(derived.id, "buyer-sql")).toBe(true);
+      expect((await second.pactData.getLineage(derived.id)).map((edge) => edge.parentId)).toEqual([source.id]);
+      expect((await second.pactData.listMarketplace()).map((entry) => entry.id)).toEqual([listing.id]);
+
+      const stats = await second.pactData.getMarketplaceStats();
+      expect(stats.totalListings).toBe(1);
+      expect(stats.totalPurchases).toBe(1);
+      expect(stats.totalRevenueCents).toBe(2500);
+      expect(purchase.buyerId).toBe("buyer-sql");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps in-memory behavior when PACT_DB_FILE is not set", () => {
     const container = createContainer(undefined, {
       env: {},

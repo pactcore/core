@@ -614,6 +614,12 @@ export { InMemoryDataAssetRepository } from "./infrastructure/data/in-memory-dat
 export { FileBackedDataAssetMetadataStore } from "./infrastructure/data/file-backed-data-asset-metadata-store";
 export { InMemoryDataListingRepository } from "./infrastructure/data/in-memory-data-listing-repository";
 export { InMemoryDataPurchaseRepository } from "./infrastructure/data/in-memory-data-purchase-repository";
+export { SQLiteDataAssetMetadataStore } from "./infrastructure/data/sqlite-data-asset-metadata-store";
+export { SQLiteDataAccessPolicyRepository } from "./infrastructure/data/sqlite-data-access-policy-repository";
+export { SQLiteDataListingRepository } from "./infrastructure/data/sqlite-data-listing-repository";
+export { SQLiteDataPurchaseRepository } from "./infrastructure/data/sqlite-data-purchase-repository";
+export { SQLiteIntegrityProofRepository } from "./infrastructure/data/sqlite-integrity-proof-repository";
+export { SQLiteProvenanceGraph } from "./infrastructure/data/sqlite-provenance-graph";
 export { calculateRevenueDistribution } from "./domain/data-marketplace";
 export type {
   DataCategory,
