@@ -90,10 +90,6 @@ export class SQLiteDataListingRepository implements DataListingRepository {
     return rows.map((row) => JSON.parse(row.listing_json) as DataListing);
   }
 
-  isDurable(): boolean {
-    return true;
-  }
-
   getHealth(): { name: string; state: string; checkedAt: number; durable: boolean; durability: string; features: Record<string, unknown> } {
     const total = this.db
       .query<{ count: number }, []>("SELECT COUNT(*) as count FROM data_listings")
